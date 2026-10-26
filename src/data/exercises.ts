@@ -1,5 +1,19 @@
 export type Metric = 'reps' | 'hold';
 
+export interface Video {
+  id: string;
+  /** Start offset in seconds, for a section of a longer video. */
+  start?: number;
+  /** Shown under the player, e.g. where this step appears in a progression video. */
+  note?: string;
+}
+
+// Verified Hybrid Calisthenics (Hampton) videos.
+const HC_PUSHUPS: Video = { id: '0GsVJsS6474', note: 'Hampton’s pushup progression: wall → incline → kneeling pushups.' };
+const HC_PUSHUPS_COURSE: Video = { id: 'ze4qofHM20k', note: 'Pushups from very easy to very hard. Full pushups and narrow (diamond-style) variations come mid-video.' };
+const HC_PULLUPS: Video = { id: 'CGAqIFxl43Q', note: 'Hampton’s pullup progression: wall pullups → horizontal pullups → jackknife → full pullups.' };
+const HC_SQUATS = 'z3XQ7T4-abQ';
+
 export interface Step {
   id: string;
   name: string;
@@ -12,8 +26,8 @@ export interface Step {
   cues: string[];
   /** YouTube search used when no demo video has been set. */
   search: string;
-  /** Optional default YouTube video id. Users can override per step in-app. */
-  videoId?: string;
+  /** Default demo clip (Hybrid Calisthenics). Users can override per step in-app. */
+  video?: Video;
 }
 
 export type LadderId = 'push' | 'row' | 'vpull' | 'squat' | 'hinge' | 'core';
@@ -35,36 +49,43 @@ export const LADDERS: Ladder[] = [
         id: 'push-wall', name: 'Wall pushup', metric: 'reps', min: 6, max: 12,
         cues: ['Hands at shoulder height, slightly wider than shoulders', 'Body straight from head to heels', 'Chest close to the wall, elbows ~45° from body'],
         search: 'wall push up proper form beginner',
+        video: { ...HC_PUSHUPS, note: 'Wall pushups open the progression.' },
       },
       {
         id: 'push-counter', name: 'Counter incline pushup', metric: 'reps', min: 6, max: 12,
         cues: ['Hands on the kitchen counter edge', 'Squeeze glutes so hips don’t sag', 'Lower until chest nearly touches the counter'],
         search: 'incline push up kitchen counter form',
+        video: { ...HC_PUSHUPS, note: 'Incline pushups come right after wall pushups. Hampton’s base is about sternum height.' },
       },
       {
         id: 'push-table', name: 'Table incline pushup', metric: 'reps', min: 6, max: 12,
         cues: ['Use a solid table or desk that can’t slide', 'Plank-straight body', 'Full range: chest to the edge, arms straight at top'],
         search: 'incline push up table form',
+        video: { ...HC_PUSHUPS, note: 'Incline pushups section. Same movement, lower base.' },
       },
       {
         id: 'push-low', name: 'Low incline pushup (sofa/step)', metric: 'reps', min: 6, max: 12,
         cues: ['Brace the sofa or step against a wall so it can’t move', 'Add 3–5 sec negatives on the last set', 'Keep elbows tucked ~45°'],
         search: 'low incline push up progression',
+        video: HC_PUSHUPS_COURSE,
       },
       {
         id: 'push-floor', name: 'Floor pushup', metric: 'reps', min: 5, max: 12,
         cues: ['Hands under shoulders', 'Body moves as one plank', 'Chest to fist height, full lockout at top'],
         search: 'perfect push up form beginner',
+        video: HC_PUSHUPS_COURSE,
       },
       {
         id: 'push-pause', name: 'Pause pushup', metric: 'reps', min: 6, max: 12,
         cues: ['Pause 2 sec at the bottom, chest just off the floor', 'Stay tight during the pause', 'Drive up hard'],
         search: 'pause push up',
+        video: HC_PUSHUPS_COURSE,
       },
       {
         id: 'push-diamond', name: 'Diamond pushup', metric: 'reps', min: 5, max: 12,
         cues: ['Thumbs and index fingers form a diamond under the chest', 'Elbows stay close to ribs', 'Use incline first if wrists complain'],
         search: 'diamond push up form',
+        video: HC_PUSHUPS_COURSE,
       },
     ],
   },
@@ -77,6 +98,7 @@ export const LADDERS: Ladder[] = [
         id: 'row-door', name: 'Doorframe row', metric: 'reps', min: 8, max: 15,
         cues: ['Grip both sides of the frame, feet near the threshold', 'Lean back with straight arms, body rigid', 'Pull chest to the frame, squeeze shoulder blades', 'Feet closer to the frame = harder'],
         search: 'doorframe row bodyweight',
+        video: { ...HC_PULLUPS, note: 'Wall pullups (first step) are the same idea as a doorframe row: grip, lean back, pull.' },
       },
       {
         id: 'row-seated', name: 'Seated band row (light)', metric: 'reps', min: 8, max: 15, needsBands: true,
@@ -119,6 +141,7 @@ export const LADDERS: Ladder[] = [
         id: 'vp-inverted', name: 'Inverted row (low bar)', metric: 'reps', min: 8, max: 12,
         cues: ['Hang under a waist-height bar, heels on the ground', 'Body straight like a plank', 'Pull chest to the bar', 'More horizontal = harder'],
         search: 'inverted row low bar beginner',
+        video: { ...HC_PULLUPS, note: 'Horizontal pullups section: chest-height bar first, then hip height.' },
       },
       {
         id: 'vp-negative', name: 'Negative pull-up', metric: 'reps', min: 3, max: 5,
@@ -134,6 +157,7 @@ export const LADDERS: Ladder[] = [
         id: 'vp-full', name: 'Pull-up', metric: 'reps', min: 1, max: 8,
         cues: ['Full hang to chin over bar', 'No kipping', 'Do as many as you can, minus one'],
         search: 'pull up proper form',
+        video: { ...HC_PULLUPS, note: 'Full pullups close out the progression.' },
       },
     ],
   },
@@ -146,16 +170,19 @@ export const LADDERS: Ladder[] = [
         id: 'sq-box', name: 'Box squat (to chair)', metric: 'reps', min: 8, max: 12,
         cues: ['Feet shoulder width, sit back to the chair', 'Touch, don’t flop', 'Stand up through the heels'],
         search: 'box squat to chair form',
+        video: { id: HC_SQUATS, start: 250, note: 'Chair squats (4:10). Same as a box squat to a chair.' },
       },
       {
         id: 'sq-body', name: 'Bodyweight squat', metric: 'reps', min: 8, max: 12,
         cues: ['Knees track over toes', 'Heels stay down', 'Hip crease below knee if comfortable'],
         search: 'bodyweight squat form',
+        video: { id: HC_SQUATS, start: 330, note: 'Half squats (5:30) into full squats (6:15).' },
       },
       {
         id: 'sq-tempo', name: 'Tempo squat (3s down, 1s pause)', metric: 'reps', min: 8, max: 12,
         cues: ['Count 3 seconds on the way down', 'Pause 1 sec at the bottom', 'Stand up normally'],
         search: 'tempo squat bodyweight',
+        video: { id: HC_SQUATS, start: 375, note: 'Full squats (6:15). Add the 3-second lower and 1-second pause.' },
       },
       {
         id: 'sq-split', name: 'Split squat', metric: 'reps', min: 8, max: 12, perSide: true,

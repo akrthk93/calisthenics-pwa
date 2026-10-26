@@ -1,18 +1,23 @@
-import { unit, type Step } from '../data/exercises';
+import { unit, type Step, type Video } from '../data/exercises';
 import { store, updateSettings } from '../store';
 import { esc, sheet, toast, youtubeId } from './util';
 
-export function videoFor(step: Step): string | undefined {
-  return store.settings.videos[step.id] ?? step.videoId;
+export function videoFor(step: Step): Video | undefined {
+  const pinned = store.settings.videos[step.id];
+  return pinned ? { id: pinned } : step.video;
 }
 
 export function cuesHtml(step: Step): string {
   return `<ul class="cues">${step.cues.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>`;
 }
 
-function embed(id: string): string {
-  const src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?playsinline=1&rel=0&modestbranding=1&loop=1&playlist=${encodeURIComponent(id)}`;
-  return `<div class="video"><iframe src="${src}" title="Exercise demo" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`;
+function embed(v: Video): string {
+  const id = encodeURIComponent(v.id);
+  const start = v.start ? `&start=${v.start}` : '';
+  const src = `https://www.youtube-nocookie.com/embed/${id}?playsinline=1&rel=0&modestbranding=1${start}`;
+  const watch = `https://www.youtube.com/watch?v=${id}${v.start ? `&t=${v.start}s` : ''}`;
+  return `<div class="video"><iframe src="${src}" title="Exercise demo" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>
+    <p class="muted small">${v.note ? esc(v.note) + ' ' : ''}<a href="${watch}" target="_blank" rel="noopener">Open in YouTube ↗</a></p>`;
 }
 
 export function showDemo(step: Step, onChange?: () => void) {
