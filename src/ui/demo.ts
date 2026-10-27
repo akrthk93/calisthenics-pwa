@@ -20,6 +20,13 @@ function embed(v: Video): string {
     <p class="muted small">${v.note ? esc(v.note) + ' ' : ''}<a href="${watch}" target="_blank" rel="noopener">Open in YouTube ↗</a></p>`;
 }
 
+/** Hampton's silent looping demo. Hidden if it fails to load. */
+function loopHtml(imgurId: string): string {
+  const src = `https://i.imgur.com/${encodeURIComponent(imgurId)}.mp4`;
+  return `<div class="video loop"><video src="${src}" autoplay loop muted playsinline preload="auto" onerror="this.parentElement.remove()"></video></div>
+    <p class="muted small">Looping demo from Hybrid Calisthenics.</p>`;
+}
+
 export function showDemo(step: Step, onChange?: () => void) {
   const render = () => {
     const id = videoFor(step);
@@ -27,7 +34,8 @@ export function showDemo(step: Step, onChange?: () => void) {
     return `
       <h2>${esc(step.name)}</h2>
       <p class="muted small">Target ${step.min}–${step.max}${esc(unit(step))}</p>
-      ${id ? embed(id) : `<div class="video empty"><p>No demo pinned yet.</p><a class="btn" href="${search}" target="_blank" rel="noopener">Find one on YouTube ↗</a></div>`}
+      ${step.loop ? loopHtml(step.loop) : ''}
+      ${id ? `${step.loop ? '<h3>Full explanation</h3>' : ''}${embed(id)}` : step.loop ? '' : `<div class="video empty"><p>No demo pinned yet.</p><a class="btn" href="${search}" target="_blank" rel="noopener">Find one on YouTube ↗</a></div>`}
       <h3>Form cues</h3>
       ${cuesHtml(step)}
       <details class="pin"${id ? '' : ' open'}>

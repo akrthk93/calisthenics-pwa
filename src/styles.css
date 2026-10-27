@@ -231,3 +231,4 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px; padding
 .stepper.compact .step-btn { width: 52px; height: 52px; font-size: 26px; }
 .stepper.compact .step-val span { font-size: 30px; }
 .run-body .ring { width: min(56vw, 220px); margin: 12px auto; }
+.video.loop video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
