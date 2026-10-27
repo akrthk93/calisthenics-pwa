@@ -1,4 +1,4 @@
-import { COOLDOWN, PULL_APART, WARMUP, findStep, ladder, unit, type LadderId, type Step } from '../data/exercises';
+import { COOLDOWN, PULL_APART, WARMUP, findStep, ladder, unit, type GuidedMove, type LadderId, type Step } from '../data/exercises';
 import { dayKey, fmtClock, fmtDuration } from '../dates';
 import { uid } from '../db';
 import { keepAwake, unlockAudio } from '../device';
@@ -6,13 +6,13 @@ import { currentStep, ladderStatus, plannedSets } from '../logic';
 import { addSession, ladderState, store } from '../store';
 import { Timer } from '../timer';
 import type { Entry, Session, SessionKind } from '../types';
-import { cuesHtml, showDemo } from './demo';
+import { showDemo } from './demo';
 import { confirmSheet, esc, toast } from './util';
 import { renderPromotions } from './promote';
 import { navigate } from '../router';
 
 type FlowStep =
-  | { t: 'warmup' }
+  | { t: 'warmup'; idx?: number }
   | { t: 'work'; ladderId: LadderId | null; stepId: string; set: number; of: number; label: string }
   | { t: 'rest'; seconds: number; next: string }
   | { t: 'cooldown'; idx: number }
@@ -102,7 +102,7 @@ export function buildFlow(kind: SessionKind | 'walk-only'): Omit<Run, 'id' | 'st
     }));
     if (store.settings.hasBands) groups.push({ label: 'Finisher', items: [{ ladderId: null, step: PULL_APART, sets: 1 }] });
 
-    flow.push({ t: 'warmup' });
+    WARMUP.forEach((_, idx) => flow.push({ t: 'warmup', idx }));
     groups.forEach((g, gi) => {
       const rounds = Math.max(...g.items.map((x) => x.sets));
       for (let set = 1; set <= rounds; set++) {
@@ -256,13 +256,13 @@ function draw() {
   const s = cur();
   switch (s.t) {
     case 'warmup':
-      return drawWarmup();
+      return drawGuided(WARMUP, s.idx ?? 0, 'Warm-up');
     case 'work':
       return drawWork(s);
     case 'rest':
       return drawRest(s);
     case 'cooldown':
-      return drawCooldown(s.idx);
+      return drawGuided(COOLDOWN, s.idx, 'Cooldown');
     case 'walk':
       return drawWalk(s.phase);
     case 'summary':
@@ -270,24 +270,57 @@ function draw() {
   }
 }
 
-function drawWarmup() {
+/** A guided timed move (warm-up or cooldown): auto-starts, auto-advances. */
+function drawGuided(list: GuidedMove[], idx: number, label: string) {
+  const m = list[idx];
+  const asStep = moveAsStep(m, label);
   root.innerHTML = `
     ${topBar(KIND_TITLE[run!.kind])}
     <section class="run-body">
-      <p class="eyebrow">Warm-up · ~3 min</p>
-      <h1>Get moving</h1>
-      <ul class="checklist">
-        ${WARMUP.map((w, i) => `<li><label><input type="checkbox" data-w="${i}"><span><b>${esc(w.name)}</b><small>${esc(w.detail)}</small></span></label></li>`).join('')}
-      </ul>
-      <p class="muted small center" data-role="clock">0:00</p>
+      <p class="eyebrow">${esc(label)} · ${idx + 1} of ${list.length}</p>
+      <h1 class="move-name">${esc(m.name)}</h1>
+      <p class="move-detail">${esc(m.detail)}</p>
+      ${ring(String(m.seconds), 1, 'seconds')}
+      <ul class="cues big">${m.cues.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
     </section>
-    <footer class="run-actions"><button class="btn primary big" data-a="next">Start main work →</button></footer>`;
-  timer = new Timer('up', 0, (d) => {
-    const c = root.querySelector('[data-role=clock]');
-    if (c) c.textContent = fmtClock(d);
-  });
+    <footer class="run-actions">
+      <div class="row gap">
+        <button class="btn ghost" data-a="pause">Pause</button>
+        ${m.video || m.loop ? '<button class="btn ghost grow" data-a="demo">▶ Demo</button>' : ''}
+        <button class="btn primary big grow" data-a="next">Next →</button>
+      </div>
+    </footer>`;
+  timer = new Timer('down', m.seconds, (d) => updateRing(String(d), d / m.seconds), () => setTimeout(() => cur() && go(1), 700));
   timer.start();
-  bind();
+  bind({
+    pause: (btn) => {
+      timer?.toggle();
+      btn.textContent = timer?.isRunning ? 'Pause' : 'Resume';
+    },
+    demo: (btn) => {
+      // Pause while watching; the person resumes when ready.
+      if (timer?.isRunning) {
+        timer.pause();
+        root.querySelector<HTMLElement>('[data-a=pause]')!.textContent = 'Resume';
+      }
+      void btn;
+      showDemo(asStep);
+    },
+  });
+}
+
+function moveAsStep(m: GuidedMove, label: string): Step {
+  return {
+    id: `${label.toLowerCase()}-${m.name.toLowerCase().replace(/[^a-z]+/g, '-')}`,
+    name: m.name,
+    metric: 'hold',
+    min: 0,
+    max: 0,
+    cues: m.cues,
+    search: m.name,
+    video: m.video,
+    loop: m.loop,
+  };
 }
 
 function drawWork(s: Extract<FlowStep, { t: 'work' }>) {
@@ -301,27 +334,31 @@ function drawWork(s: Extract<FlowStep, { t: 'work' }>) {
   const targetTxt = `${step.min}–${step.max}${unit(step) ? ' ' + unit(step).trim() : ' reps'}`;
   const tip = run!.kind === 'minimum' ? 'One easy set. It counts.' : s.set === 1 && cur() === run!.flow.find((f) => f.t === 'work') ? isHold ? '' : 'Stop each set with reps left in the tank.' : '';
 
+  const pips = Array.from({ length: s.of }, (_, k) => `<i class="${k < s.set - 1 ? 'done' : k === s.set - 1 ? 'now' : ''}"></i>`).join('');
+
   root.innerHTML = `
     ${topBar(KIND_TITLE[run!.kind])}
-    <section class="run-body">
-      <p class="eyebrow">${esc(s.label)} · ${esc(ladderName)} · Set ${s.set} of ${s.of}</p>
-      <h1>${esc(step.name)}</h1>
-      <p class="target">Target <b>${esc(targetTxt)}</b>${prev != null ? ` · last time <b>${prev}${isHold ? 's' : ''}</b>` : ''}</p>
-      <button class="btn ghost demo-btn" data-a="demo">▶ Demo &amp; form</button>
+    <section class="run-body work">
+      <div class="work-head">
+        <p class="eyebrow">${esc(s.label)} · ${esc(ladderName)}</p>
+        <div class="pips" aria-label="Set ${s.set} of ${s.of}">${pips}<span>Set ${s.set}/${s.of}</span></div>
+      </div>
+      <h1 class="ex-name">${esc(step.name)}</h1>
+      <p class="target">Target <b>${esc(targetTxt)}</b>${prev != null ? ` · last <b>${prev}${isHold ? 's' : ''}</b>` : ''}</p>
       ${isHold ? ring(`${value}`, 1, 'seconds') : ''}
       <div class="stepper${isHold ? ' compact' : ''}">
         <button class="step-btn" data-a="dec" aria-label="Less">−</button>
         <div class="step-val"><span data-role="val">${value}</span><small>${isHold ? 'sec goal' : step.perSide ? 'reps / side' : 'reps'}</small></div>
         <button class="step-btn" data-a="inc" aria-label="More">+</button>
       </div>
-      ${tip ? `<p class="muted small center">${esc(tip)}</p>` : ''}
-      <details class="cue-peek"><summary>Form cues</summary>${cuesHtml(step)}</details>
+      ${tip ? `<p class="tip">${esc(tip)}</p>` : ''}
     </section>
     <footer class="run-actions">
       ${isHold ? `<button class="btn big" data-a="hold">Start hold</button>` : ''}
+      <button class="btn primary huge" data-a="done">Done set ✓</button>
       <div class="row gap">
+        <button class="btn ghost grow" data-a="demo">▶ Demo &amp; form</button>
         <button class="btn ghost" data-a="skip">Skip</button>
-        <button class="btn primary big grow" data-a="done">Done set ✓</button>
       </div>
     </footer>`;
 
@@ -382,11 +419,12 @@ function drawRest(s: Extract<FlowStep, { t: 'rest' }>) {
     <section class="run-body center">
       <p class="eyebrow">Rest</p>
       ${ring(String(s.seconds), 1, 'seconds')}
-      <p class="muted">Up next: <b>${esc(s.next)}</b></p>
+      <p class="eyebrow">Up next</p>
+      <p class="next-name">${esc(s.next)}</p>
     </section>
     <footer class="run-actions">
       <div class="row gap">
-        <button class="btn ghost" data-a="add">+15s</button>
+        <button class="btn ghost big" data-a="add">+15s</button>
         <button class="btn primary big grow" data-a="next">Skip rest →</button>
       </div>
     </footer>`;
@@ -401,21 +439,6 @@ function drawRest(s: Extract<FlowStep, { t: 'rest' }>) {
   });
 }
 
-function drawCooldown(idx: number) {
-  const c = COOLDOWN[idx];
-  root.innerHTML = `
-    ${topBar(KIND_TITLE[run!.kind])}
-    <section class="run-body center">
-      <p class="eyebrow">Cooldown · ${idx + 1} of ${COOLDOWN.length}</p>
-      <h1>${esc(c.name)}</h1>
-      ${ring(String(c.seconds), 1, 'seconds')}
-    </section>
-    <footer class="run-actions"><button class="btn primary big" data-a="next">Next →</button></footer>`;
-  timer = new Timer('down', c.seconds, (d) => updateRing(String(d), d / c.seconds), () => setTimeout(() => go(1), 600));
-  timer.start();
-  bind();
-}
-
 function drawWalk(phase: 'out' | 'home' | 'only') {
   const text = {
     out: { h: 'Walk to the bars', p: 'Easy pace for about 10 minutes — talk, don’t sing.', btn: 'At the bars →' },
@@ -427,7 +450,7 @@ function drawWalk(phase: 'out' | 'home' | 'only') {
     ${topBar(KIND_TITLE[run!.kind])}
     <section class="run-body center">
       <p class="eyebrow">${phase === 'out' ? 'Part 1 of 3' : phase === 'home' ? 'Part 3 of 3' : 'Walk only'}</p>
-      <h1>${esc(text.h)}</h1>
+      <h1 class="move-name">${esc(text.h)}</h1>
       ${ring('0:00', 0, `goal ${goalMin} min`)}
       <p class="muted">${esc(text.p)}</p>
       <p class="muted small">Timer keeps time with the screen locked.</p>
@@ -478,7 +501,7 @@ function drawSummary() {
     ${topBar(KIND_TITLE[run!.kind])}
     <section class="run-body">
       <p class="eyebrow">Nice work</p>
-      <h1>Session done</h1>
+      <h1 class="move-name">Session done</h1>
       <p class="muted">${fmtDuration(dur)} total</p>
       ${
         run!.kind === 'walk'

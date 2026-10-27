@@ -33,7 +33,7 @@ export function showDemo(step: Step, onChange?: () => void) {
     const search = `https://www.youtube.com/results?search_query=${encodeURIComponent(step.search)}`;
     return `
       <h2>${esc(step.name)}</h2>
-      <p class="muted small">Target ${step.min}–${step.max}${esc(unit(step))}</p>
+      ${step.max ? `<p class="muted small">Target ${step.min}–${step.max}${esc(unit(step))}</p>` : ''}
       ${step.loop ? loopHtml(step.loop) : ''}
       ${id ? `${step.loop ? '<h3>Full explanation</h3>' : ''}${embed(id)}` : step.loop ? '' : `<div class="video empty"><p>No demo pinned yet.</p><a class="btn" href="${search}" target="_blank" rel="noopener">Find one on YouTube ↗</a></div>`}
       <h3>Form cues</h3>

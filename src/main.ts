@@ -1,3 +1,5 @@
+import '@fontsource/barlow-condensed/latin-700.css';
+import '@fontsource/barlow-condensed/latin-800.css';
 import './styles.css';
 import { registerSW } from 'virtual:pwa-register';
 import { requestPersistence } from './db';

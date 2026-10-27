@@ -292,18 +292,73 @@ export const PULL_APART: Step = {
   video: { id: 'yIVdFq14LiE', note: 'GaglioneStrength: band pull-apart guide.' },
 };
 
-export const WARMUP = [
-  { name: 'Arm circles', detail: '10 each way' },
-  { name: 'Cat-cow', detail: '8 slow reps' },
-  { name: 'Bodyweight good mornings', detail: '10 reps' },
-  { name: 'Squats to a chair', detail: '8 reps' },
+export interface GuidedMove {
+  name: string;
+  /** What to do, shown big: "10 each way". */
+  detail: string;
+  seconds: number;
+  cues: string[];
+  video?: Video;
+  loop?: string;
+}
+
+export const WARMUP: GuidedMove[] = [
+  {
+    name: 'Arm circles',
+    detail: '10 forwards, 10 backwards',
+    seconds: 40,
+    cues: ['Arms straight out to the sides', 'Start small, finish with big circles', 'Shoulders down, away from your ears'],
+    video: { id: 'P3dzI9opLGE', note: 'Made Possible Personal Training: arm circles dynamic warm-up.' },
+  },
+  {
+    name: 'Cat-cow',
+    detail: '8 slow reps',
+    seconds: 45,
+    cues: ['Hands under shoulders, knees under hips', 'Exhale: round your back, tuck chin', 'Inhale: drop belly, lift chest and gaze'],
+    video: { id: '5KYLaU6Lg2E', note: 'Britt Hammond: cat/cow demo.' },
+  },
+  {
+    name: 'Bodyweight good mornings',
+    detail: '10 reps',
+    seconds: 40,
+    cues: ['Hands on hips or behind your head', 'Soft knees, push hips straight back', 'Flat back; stand up by squeezing glutes'],
+    video: { id: '61zbhuRiwQg', note: 'Horton Barbell: bodyweight good mornings (under a minute).' },
+  },
+  {
+    name: 'Squats to a chair',
+    detail: '8 easy reps',
+    seconds: 40,
+    cues: ['Feet shoulder width', 'Sit back until you touch the chair', 'Stand up through your heels'],
+    loop: 'KjUMRFA',
+    video: { id: 'z3XQ7T4-abQ', start: 250, note: 'Hybrid Calisthenics: chair squats (4:10).' },
+  },
 ];
 
-export const COOLDOWN = [
-  { name: 'Hip flexor stretch — left', seconds: 30 },
-  { name: 'Hip flexor stretch — right', seconds: 30 },
-  { name: 'Doorway chest stretch', seconds: 30 },
-  { name: 'Child’s pose', seconds: 30 },
+export const COOLDOWN: GuidedMove[] = [
+  {
+    name: 'Hip flexor stretch — left',
+    detail: 'Left knee down',
+    seconds: 30,
+    cues: ['Half-kneel, left knee on a cushion', 'Squeeze left glute, tuck pelvis under', 'Shift forward gently until the front of the hip stretches'],
+  },
+  {
+    name: 'Hip flexor stretch — right',
+    detail: 'Right knee down',
+    seconds: 30,
+    cues: ['Half-kneel, right knee on a cushion', 'Squeeze right glute, tuck pelvis under', 'Shift forward gently'],
+  },
+  {
+    name: 'Doorway chest stretch',
+    detail: 'Both sides of the frame',
+    seconds: 30,
+    cues: ['Forearms on the frame, elbows at shoulder height', 'Step one foot through', 'Lean until you feel the chest open. No pain'],
+  },
+  {
+    name: 'Child’s pose',
+    detail: 'Breathe slowly',
+    seconds: 30,
+    cues: ['Knees wide, big toes together', 'Sit hips back to heels', 'Arms long, forehead down, slow breaths'],
+  },
 ];
 
 export function ladder(id: LadderId): Ladder {

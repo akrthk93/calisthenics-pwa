@@ -23,25 +23,22 @@ export function renderSettings(el: HTMLElement) {
     ${standalone ? '' : `<div class="banner">Install it: tap <b>Share</b> → <b>Add to Home Screen</b>. It then runs full-screen and offline.</div>`}
 
     <h3 class="section">Plan</h3>
-    <div class="card form">
-      <label class="field"><span>Plan start date</span><input class="input" type="date" data-k="startDate" value="${esc(s.startDate)}"></label>
-      <p class="muted small">Weeks 1–2 use 2 sets per exercise, then 3.</p>
-      <label class="switch"><input type="checkbox" data-k="hasBands" ${s.hasBands ? 'checked' : ''}><span>I have resistance bands</span></label>
-      <p class="muted small">Unlocks band rows, pull-aparts, band-assisted pull-ups and band good mornings.</p>
-      <label class="field"><span>Home rest between pairs (sec)</span><input class="input" type="number" inputmode="numeric" min="15" max="180" step="5" data-k="restSec" value="${s.restSec}"></label>
-      <label class="field"><span>Bar stop rest (sec)</span><input class="input" type="number" inputmode="numeric" min="15" max="240" step="5" data-k="barRestSec" value="${s.barRestSec}"></label>
-      ${s.deloadUntil && s.deloadUntil >= dayKey() ? `<div class="row gap"><span class="pill warn">Deload until ${esc(fmtDay(s.deloadUntil))}</span><button class="link" data-a="enddeload">End early</button></div>` : ''}
+    <div class="group">
+      <label class="setting"><span>Plan start date<small>Weeks 1–2 use 2 sets, then 3</small></span><input class="input compact" type="date" data-k="startDate" value="${esc(s.startDate)}"></label>
+      <label class="setting"><span>I have resistance bands<small>Unlocks band rows, pull-aparts, band-assisted pull-ups</small></span><span class="switch"><input type="checkbox" data-k="hasBands" ${s.hasBands ? 'checked' : ''}></span></label>
+      <label class="setting"><span>Rest between pairs<small>Home sessions</small></span><span class="unit-input"><input class="input compact num" type="number" inputmode="numeric" min="15" max="180" step="5" data-k="restSec" value="${s.restSec}"><em>sec</em></span></label>
+      <label class="setting"><span>Rest at the bars<small>Walk + Bar Stop</small></span><span class="unit-input"><input class="input compact num" type="number" inputmode="numeric" min="15" max="240" step="5" data-k="barRestSec" value="${s.barRestSec}"><em>sec</em></span></label>
+      ${s.deloadUntil && s.deloadUntil >= dayKey() ? `<div class="setting"><span>Deload week<small>2 sets until ${esc(fmtDay(s.deloadUntil))}</small></span><button class="btn ghost small" data-a="enddeload">End early</button></div>` : ''}
     </div>
 
     <h3 class="section">Timer</h3>
-    <div class="card form">
-      <label class="switch"><input type="checkbox" data-k="sound" ${s.sound ? 'checked' : ''}><span>Beeps (3-2-1 and done)</span></label>
-      <button class="btn ghost" data-a="testsound">Test sound</button>
-      <p class="muted small">If you hear nothing, check the ringer switch and volume. The screen stays awake during sessions.</p>
+    <div class="group">
+      <label class="setting"><span>Beeps<small>3-2-1 countdown and done chime</small></span><span class="switch"><input type="checkbox" data-k="sound" ${s.sound ? 'checked' : ''}></span></label>
+      <div class="setting"><span>Test sound<small>Silent? Check the ringer switch and volume</small></span><button class="btn ghost small" data-a="testsound">Play</button></div>
     </div>
 
     <h3 class="section">Your data</h3>
-    <div class="card form">
+    <div class="group pad">
       <p class="small">Everything is stored on this phone only. Export a backup now and then — deleting the app or clearing Safari data wipes it.</p>
       <p class="muted small">Last backup: ${lb ? esc(new Date(lb).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })) : 'never'}</p>
       <div class="row gap">
