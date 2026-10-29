@@ -20,6 +20,9 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* Stop iOS double-tap-to-zoom when tapping +/- quickly. Pinch zoom still works. */
+html, body, button, a, label, input, .btn, .step-btn, .icon-btn { touch-action: manipulation; }
+button, .btn, .stepper, .ring, .pips, .tabbar { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 body {
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
@@ -201,6 +204,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px; padding
 .pips i.now { background: var(--accent); }
 .pips span { font-size: 15px; font-weight: 700; color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .ex-name, .move-name { font: 800 clamp(44px, 13vw, 64px)/0.95 var(--display); text-transform: uppercase; margin: 6px 0 10px; overflow-wrap: anywhere; }
+.move-goal { font: 800 clamp(40px, 12vw, 56px)/1 var(--display); color: var(--accent); text-transform: uppercase; margin: 18px 0 8px; }
 .move-detail { font-size: 22px; font-weight: 650; color: var(--text); margin: 0 0 4px; }
 .target { color: var(--muted); font-size: 18px; }
 .target b { color: var(--text); }

@@ -14,7 +14,7 @@ import { navigate } from '../router';
 type FlowStep =
   | { t: 'warmup'; idx?: number }
   | { t: 'work'; ladderId: LadderId | null; stepId: string; set: number; of: number; label: string }
-  | { t: 'rest'; seconds: number; next: string }
+  | { t: 'rest'; seconds: number; next: string; nextId?: string }
   | { t: 'cooldown'; idx: number }
   | { t: 'walk'; phase: 'out' | 'home' | 'only' }
   | { t: 'summary' };
@@ -114,7 +114,7 @@ export function buildFlow(kind: SessionKind | 'walk-only'): Omit<Run, 'id' | 'st
         const lastRound = gi === groups.length - 1 && set === rounds;
         if (!lastRound) {
           const nextGroup = set === rounds ? groups[gi + 1] : g;
-          flow.push({ t: 'rest', seconds: store.settings.restSec, next: nextGroup.items[0].step.name });
+          flow.push({ t: 'rest', seconds: store.settings.restSec, next: nextGroup.items[0].step.name, nextId: nextGroup.items[0].step.id });
         }
       }
     });
@@ -132,7 +132,7 @@ export function buildFlow(kind: SessionKind | 'walk-only'): Omit<Run, 'id' | 'st
     flow.push({ t: 'walk', phase: 'out' });
     for (let set = 1; set <= sets; set++) {
       flow.push({ t: 'work', ladderId: 'vpull', stepId: step.id, set, of: sets, label: 'Bar' });
-      if (set < sets) flow.push({ t: 'rest', seconds: store.settings.barRestSec, next: step.name });
+      if (set < sets) flow.push({ t: 'rest', seconds: store.settings.barRestSec, next: step.name, nextId: step.id });
     }
     flow.push({ t: 'walk', phase: 'home' });
   } else {
@@ -274,36 +274,42 @@ function draw() {
 function drawGuided(list: GuidedMove[], idx: number, label: string) {
   const m = list[idx];
   const asStep = moveAsStep(m, label);
+  const timed = !!m.seconds;
+  const hasDemo = !!(m.video || m.loop);
   root.innerHTML = `
     ${topBar(KIND_TITLE[run!.kind])}
     <section class="run-body">
       <p class="eyebrow">${esc(label)} · ${idx + 1} of ${list.length}</p>
       <h1 class="move-name">${esc(m.name)}</h1>
-      <p class="move-detail">${esc(m.detail)}</p>
-      ${ring(String(m.seconds), 1, 'seconds')}
+      ${timed ? `<p class="move-detail">${esc(m.detail)}</p>${ring(String(m.seconds), 1, 'seconds')}` : `<p class="move-goal">${esc(m.detail)}</p>`}
       <ul class="cues big">${m.cues.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
     </section>
     <footer class="run-actions">
-      <div class="row gap">
-        <button class="btn ghost" data-a="pause">Pause</button>
-        ${m.video || m.loop ? '<button class="btn ghost grow" data-a="demo">▶ Demo</button>' : ''}
-        <button class="btn primary big grow" data-a="next">Next →</button>
-      </div>
+      ${timed
+        ? `<div class="row gap">
+            <button class="btn ghost" data-a="pause">Pause</button>
+            ${hasDemo ? '<button class="btn ghost grow" data-a="demo">▶ Demo</button>' : ''}
+            <button class="btn primary big grow" data-a="next">Next →</button>
+          </div>`
+        : `<button class="btn primary huge" data-a="next">Done ✓</button>
+          ${hasDemo ? '<button class="btn ghost" data-a="demo">▶ Demo &amp; form</button>' : ''}`}
     </footer>`;
-  timer = new Timer('down', m.seconds, (d) => updateRing(String(d), d / m.seconds), () => setTimeout(() => cur() && go(1), 700));
-  timer.start();
+  if (timed) {
+    timer = new Timer('down', m.seconds!, (d) => updateRing(String(d), d / m.seconds!), () => setTimeout(() => cur() && go(1), 700));
+    timer.start();
+  }
   bind({
     pause: (btn) => {
       timer?.toggle();
       btn.textContent = timer?.isRunning ? 'Pause' : 'Resume';
     },
-    demo: (btn) => {
-      // Pause while watching; the person resumes when ready.
+    demo: () => {
+      // Pause a timed move while watching; resume when ready.
       if (timer?.isRunning) {
         timer.pause();
-        root.querySelector<HTMLElement>('[data-a=pause]')!.textContent = 'Resume';
+        const p = root.querySelector<HTMLElement>('[data-a=pause]');
+        if (p) p.textContent = 'Resume';
       }
-      void btn;
       showDemo(asStep);
     },
   });
@@ -414,6 +420,9 @@ function record(s: Extract<FlowStep, { t: 'work' }>, v: number | null) {
 }
 
 function drawRest(s: Extract<FlowStep, { t: 'rest' }>) {
+  // Older in-progress runs saved before nextId existed: find the next work step.
+  const nextId = s.nextId ?? (run!.flow.slice(run!.i + 1).find((f) => f.t === 'work') as Extract<FlowStep, { t: 'work' }> | undefined)?.stepId;
+  const nextStep = nextId ? findStep(nextId)?.step : undefined;
   root.innerHTML = `
     ${topBar(KIND_TITLE[run!.kind])}
     <section class="run-body center">
@@ -423,6 +432,7 @@ function drawRest(s: Extract<FlowStep, { t: 'rest' }>) {
       <p class="next-name">${esc(s.next)}</p>
     </section>
     <footer class="run-actions">
+      ${nextStep ? '<button class="btn ghost big" data-a="demo">▶ Demo: up next</button>' : ''}
       <div class="row gap">
         <button class="btn ghost big" data-a="add">+15s</button>
         <button class="btn primary big grow" data-a="next">Skip rest →</button>
@@ -436,6 +446,8 @@ function drawRest(s: Extract<FlowStep, { t: 'rest' }>) {
       total += 15;
       timer?.add(15);
     },
+    // Rest keeps counting down while the demo is open.
+    demo: () => nextStep && showDemo(nextStep),
   });
 }
 
