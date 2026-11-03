@@ -1,6 +1,7 @@
 import { dayKey, fmtDay } from '../dates';
 import { exportBackup, importBackup, validateBackup } from '../db';
 import { beep, unlockAudio } from '../device';
+import { appBadgeSupported, enableAppBadge } from '../badge';
 import { loadAll, store, updateSettings } from '../store';
 import { confirmSheet, esc, toast } from './util';
 
@@ -10,6 +11,30 @@ function lastBackup(): string | null {
   } catch {
     return null;
   }
+}
+
+function badgeState(): 'unsupported' | NotificationPermission {
+  return appBadgeSupported() ? Notification.permission : 'unsupported';
+}
+
+function badgeNote(): string {
+  switch (badgeState()) {
+    case 'granted':
+      return 'Shows weigh-ins and waist checks due';
+    case 'denied':
+      return 'Blocked. Allow in iOS Settings › Notifications › Cali';
+    case 'unsupported':
+      return 'Open the app from your home screen to turn this on';
+    default:
+      return 'Needs notification permission. No notifications are sent';
+  }
+}
+
+function badgeControl(): string {
+  const st = badgeState();
+  if (st === 'granted') return '<span class="pill good">On</span>';
+  if (st === 'default') return '<button class="btn ghost small" data-a="badge">Turn on</button>';
+  return '';
 }
 
 export function renderSettings(el: HTMLElement) {
@@ -35,6 +60,11 @@ export function renderSettings(el: HTMLElement) {
     <div class="group">
       <label class="setting"><span>Beeps<small>3-2-1 countdown and done chime</small></span><span class="switch"><input type="checkbox" data-k="sound" ${s.sound ? 'checked' : ''}></span></label>
       <div class="setting"><span>Test sound<small>Silent? Check the ringer switch and volume</small></span><button class="btn ghost small" data-a="testsound">Play</button></div>
+    </div>
+
+    <h3 class="section">Reminders</h3>
+    <div class="group">
+      <div class="setting"><span>Badge on app icon<small>${esc(badgeNote())}</small></span>${badgeControl()}</div>
     </div>
 
     <h3 class="section">Your data</h3>
@@ -63,6 +93,12 @@ export function renderSettings(el: HTMLElement) {
 
   el.onclick = async (e) => {
     const a = (e.target as HTMLElement).closest<HTMLElement>('[data-a]')?.dataset.a;
+    if (a === 'badge') {
+      const r = await enableAppBadge();
+      if (r === 'granted') toast('Icon badge on');
+      renderSettings(el);
+      return;
+    }
     if (a === 'testsound') {
       unlockAudio();
       beep(880, 110);

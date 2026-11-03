@@ -105,3 +105,20 @@ describe('missedLastSlot', () => {
     expect(missedLastSlot([], '2026-10-27', '2026-10-27')).toBe(false);
   });
 });
+
+import { dueCheckins } from '../src/logic';
+
+describe('dueCheckins', () => {
+  const keys = (m: Parameters<typeof dueCheckins>[0], d: string) => dueCheckins(m, d).map((x) => x.key);
+  it('weight is due on Mon/Wed/Fri until logged that day', () => {
+    const waist = { day: '2026-11-01', waistCm: 90 };
+    expect(keys([waist], '2026-11-02')).toEqual(['weight']); // Mon
+    expect(keys([waist], '2026-11-03')).toEqual([]); // Tue
+    expect(keys([waist, { day: '2026-11-02', weightKg: 72 }], '2026-11-02')).toEqual([]);
+  });
+  it('waist is due with no entry, or after 28 days', () => {
+    expect(keys([], '2026-11-03')).toEqual(['waist']);
+    expect(keys([{ day: '2026-10-06', waistCm: 90 }], '2026-11-03')).toEqual(['waist']);
+    expect(keys([{ day: '2026-10-07', waistCm: 90 }], '2026-11-03')).toEqual([]);
+  });
+});

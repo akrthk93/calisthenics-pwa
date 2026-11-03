@@ -110,3 +110,23 @@ export function weeklyAvgWeight(points: { day: string; weightKg?: number }[], to
   const w = points.filter((p) => p.weightKg != null && p.day >= from && p.day <= today).map((p) => p.weightKg!);
   return w.length ? Math.round((w.reduce((a, b) => a + b, 0) / w.length) * 10) / 10 : null;
 }
+
+export interface DueItem {
+  key: 'weight' | 'waist';
+  label: string;
+}
+
+/**
+ * Body check-ins due today:
+ * - weight: on Mon/Wed/Fri (3×/week, training mornings) until logged that day
+ * - waist: when the last waist entry is 28+ days old, or there is none
+ */
+export function dueCheckins(metrics: { day: string; weightKg?: number; waistCm?: number }[], today: string): DueItem[] {
+  const due: DueItem[] = [];
+  if (isStrengthDay(today) && !metrics.some((m) => m.day === today && m.weightKg != null)) {
+    due.push({ key: 'weight', label: 'Weigh-in' });
+  }
+  const lastWaist = metrics.filter((m) => m.waistCm != null && m.day <= today).sort((a, b) => b.day.localeCompare(a.day))[0];
+  if (!lastWaist || daysBetween(lastWaist.day, today) >= 28) due.push({ key: 'waist', label: 'Waist measurement' });
+  return due;
+}

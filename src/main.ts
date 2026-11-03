@@ -2,6 +2,7 @@ import '@fontsource/barlow-condensed/latin-700.css';
 import '@fontsource/barlow-condensed/latin-800.css';
 import './styles.css';
 import { registerSW } from 'virtual:pwa-register';
+import { updateBadges } from './badge';
 import { requestPersistence } from './db';
 import { currentRoute, type Route } from './router';
 import { loadAll } from './store';
@@ -24,12 +25,14 @@ function render() {
   app.onchange = null;
   app.className = r === 'session' ? 'run' : 'page';
   ({ today: renderToday, progress: renderProgress, history: renderHistory, settings: renderSettings, session: mountSession })[r](app);
+  updateBadges();
 }
 
 // Re-render Today when the app comes back to the foreground on a new day.
 let lastDay = new Date().toDateString();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
+  updateBadges();
   const d = new Date().toDateString();
   if (d !== lastDay && currentRoute() !== 'session') {
     lastDay = d;

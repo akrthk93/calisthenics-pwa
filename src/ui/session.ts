@@ -286,28 +286,33 @@ function drawGuided(list: GuidedMove[], idx: number, label: string) {
     </section>
     <footer class="run-actions">
       ${timed
-        ? `<div class="row gap">
-            <button class="btn ghost" data-a="pause">Pause</button>
+        ? `<button class="btn primary huge" data-a="toggle">Start ${m.seconds}s</button>
+          <div class="row gap">
             ${hasDemo ? '<button class="btn ghost grow" data-a="demo">▶ Demo</button>' : ''}
-            <button class="btn primary big grow" data-a="next">Next →</button>
+            <button class="btn ghost grow" data-a="next">Skip →</button>
           </div>`
         : `<button class="btn primary huge" data-a="next">Done ✓</button>
           ${hasDemo ? '<button class="btn ghost" data-a="demo">▶ Demo &amp; form</button>' : ''}`}
     </footer>`;
+  // Timed moves wait for a tap so there's time to get into position.
   if (timed) {
-    timer = new Timer('down', m.seconds!, (d) => updateRing(String(d), d / m.seconds!), () => setTimeout(() => cur() && go(1), 700));
-    timer.start();
+    timer = new Timer('down', m.seconds!, (d) => updateRing(String(d), d / m.seconds!), () => {
+      const b = root.querySelector<HTMLElement>('[data-a=toggle]');
+      if (b) b.textContent = 'Done ✓';
+      setTimeout(() => cur() && go(1), 900);
+    });
   }
   bind({
-    pause: (btn) => {
-      timer?.toggle();
-      btn.textContent = timer?.isRunning ? 'Pause' : 'Resume';
+    toggle: (btn) => {
+      if (!timer) return;
+      timer.toggle();
+      btn.textContent = timer.isRunning ? 'Pause' : 'Resume';
     },
     demo: () => {
       // Pause a timed move while watching; resume when ready.
       if (timer?.isRunning) {
         timer.pause();
-        const p = root.querySelector<HTMLElement>('[data-a=pause]');
+        const p = root.querySelector<HTMLElement>('[data-a=toggle]');
         if (p) p.textContent = 'Resume';
       }
       showDemo(asStep);

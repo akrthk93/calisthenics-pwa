@@ -1,7 +1,8 @@
 import { LADDERS, ladder, unit, type LadderId } from '../data/exercises';
 import { dayKey, fmtDay } from '../dates';
 import { uid } from '../db';
-import { currentStep, ladderStatus, volume, weeklyAvgWeight } from '../logic';
+import { currentStep, dueCheckins, ladderStatus, volume, weeklyAvgWeight } from '../logic';
+import { updateBadges } from '../badge';
 import { addMetric, ladderState, removeMetric, store } from '../store';
 import { showDemo } from './demo';
 import { moveLadder, renderPromotions, statusLabel } from './promote';
@@ -32,6 +33,7 @@ function trend(id: LadderId): number[] {
 export function renderProgress(el: HTMLElement) {
   const today = dayKey();
   const s = store.settings;
+  const due = dueCheckins(store.metrics, today);
   const attention = store.ladders
     .filter((l) => ['ready', 'needs-bands', 'stalled'].includes(ladderStatus(l, store.sessions, s, today).kind))
     .map((l) => l.id);
@@ -45,6 +47,8 @@ export function renderProgress(el: HTMLElement) {
 
   el.innerHTML = `
     <header class="page-head"><div><p class="eyebrow">Ladders &amp; body</p><h1>Progress</h1></div></header>
+
+    ${due.length ? `<button class="banner due" data-a="gotobody"><b>${due.length}</b><span>${due.map((d) => esc(d.label)).join(' + ')} due today</span><em>Log →</em></button>` : ''}
 
     ${attention.length ? `<h3 class="section">Needs a decision</h3><div data-role="promos"></div>` : ''}
 
@@ -73,7 +77,7 @@ export function renderProgress(el: HTMLElement) {
       </div>`;
     }).join('')}
 
-    <h3 class="section">Body</h3>
+    <h3 class="section" id="body">Body</h3>
     <div class="card">
       <div class="stats">
         <div><small>Weight · 7-day avg</small><b>${avg != null ? `${avg} kg` : '—'}</b></div>
@@ -111,6 +115,7 @@ export function renderProgress(el: HTMLElement) {
     await addMetric({ id: uid(), day: today, ...(isNaN(w) ? {} : { weightKg: w }), ...(isNaN(c) ? {} : { waistCm: c }) });
     toast('Logged');
     renderProgress(el);
+    updateBadges();
   };
 
   el.onclick = async (e) => {
@@ -118,6 +123,11 @@ export function renderProgress(el: HTMLElement) {
     if (!b || (b as HTMLButtonElement).disabled || b.closest('[data-role=promos]')) return;
     const id = b.dataset.id as LadderId;
     const a = b.dataset.a;
+    if (a === 'gotobody') {
+      document.getElementById('body')?.scrollIntoView({ behavior: 'smooth' });
+      el.querySelector<HTMLInputElement>(due[0]?.key === 'waist' ? 'input[name=waist]' : 'input[name=weight]')?.focus({ preventScroll: true });
+      return;
+    }
     if (a === 'demo') showDemo(currentStep(ladderState(id)));
     else if (a === 'up' || a === 'down') {
       const l = ladder(id);
@@ -135,6 +145,7 @@ export function renderProgress(el: HTMLElement) {
     } else if (a === 'delm') {
       await removeMetric(b.dataset.id!);
       renderProgress(el);
+      updateBadges();
     }
   };
 }
