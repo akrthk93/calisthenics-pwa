@@ -4,4 +4,3 @@ dev-dist
 *.log
 .DS_Store
 public/*.png
-package-lock.json

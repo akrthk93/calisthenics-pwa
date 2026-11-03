@@ -21,8 +21,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      # Retry once with a clean cache: works around intermittent npm install crashes.
-      - run: npm install --no-audit --no-fund || (npm cache clean --force && rm -rf node_modules && npm install --no-audit --no-fund)
+          cache: npm
+      # Install exactly the locked versions; re-resolving hit an npm peer-deps bug.
+      - run: npm ci --no-audit --no-fund
       - run: npm test
       - run: npm run build
       - uses: actions/configure-pages@v5
