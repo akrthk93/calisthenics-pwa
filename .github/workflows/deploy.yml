@@ -26,6 +26,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm test
       - run: npm run build
+        env:
+          VITE_PUSH_URL: https://pwa-push.akrthk93.workers.dev
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
