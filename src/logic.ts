@@ -1,5 +1,5 @@
 import { LADDERS, ladder, type LadderId, type Step } from './data/exercises';
-import { addDays, daysBetween, isStrengthDay, weekStart } from './dates';
+import { addDays, daysBetween, isStrengthDay, weekStart, weekday } from './dates';
 import type { LadderState, Session, Settings } from './types';
 
 export const STALL_DAYS = 21;
@@ -138,6 +138,7 @@ export interface ReminderItem {
   title: string;
   body: string;
   tag: string;
+  /** Icon badge to set; -1 leaves it unchanged. */
   badge: number;
 }
 
@@ -188,3 +189,45 @@ export function reminderItems(
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * 8pm "streak at risk" alerts: on the last day you can still reach 3 strength
+ * sessions this week (so skipping today makes it impossible), when there's a
+ * streak to lose. Future weeks assume the weeks before them get completed; the
+ * app re-syncs after every logged session, so this only matters if it isn't opened.
+ */
+export function streakItems(today: string, sessions: Session[], days = 28): ReminderItem[] {
+  const strength = sessions.filter(countsAsStrength);
+  const perWeek = new Map<string, number>();
+  for (const s of strength) perWeek.set(weekStart(s.day), (perWeek.get(weekStart(s.day)) ?? 0) + 1);
+  const thisWeek = weekStart(today);
+  const completedBefore = (w: string) => {
+    let n = 0;
+    for (let x = addDays(w, -7); (perWeek.get(x) ?? 0) >= 3; x = addDays(x, -7)) n++;
+    return n;
+  };
+  const base = completedBefore(thisWeek);
+
+  const items: ReminderItem[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = addDays(today, i);
+    const w = weekStart(d);
+    if (strength.some((s) => s.day === d)) continue;
+    const done = strength.filter((s) => weekStart(s.day) === w && s.day <= d).length;
+    const needed = 3 - done;
+    const daysAfter = 6 - weekday(d);
+    if (needed <= 0 || needed !== daysAfter + 1) continue;
+    const atStake = w === thisWeek ? base : base + Math.round(daysBetween(thisWeek, w) / 7);
+    if (atStake < 1) continue;
+    const [y, mo, da] = d.split('-').map(Number);
+    items.push({
+      id: `streak-${d}`,
+      at: new Date(y, mo - 1, da, 20, 0).getTime(),
+      title: `${atStake}-week streak at risk`,
+      body: needed === 1 ? 'Train today to make 3 this week. The 5-minute session counts.' : `You need ${needed} more this week, so today’s the day. The 5-minute session counts.`,
+      tag: 'streak',
+      badge: -1,
+    });
+  }
+  return items;
+}

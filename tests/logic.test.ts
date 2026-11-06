@@ -153,3 +153,33 @@ describe('reminderItems', () => {
     expect([onlyTrained.id, onlyTrained.title]).toEqual(['morning-2026-11-06', 'Weigh-in']);
   });
 });
+
+import { streakItems } from '../src/logic';
+
+describe('streakItems', () => {
+  const s = (day: string) => ({ id: day, at: `${day}T06:50:00.000Z`, day, kind: 'strength' as const, durationSec: 1, entries: [] });
+  // Week of Mon 26 Oct completed: a 1-week streak going into Mon 2 Nov.
+  const lastWeek = [s('2026-10-26'), s('2026-10-28'), s('2026-10-30')];
+  const ids = (today: string, sessions: ReturnType<typeof s>[], days = 7) => streakItems(today, sessions, days).map((i) => i.id);
+
+  it('no sessions this week: last chance is Friday (Fri, Sat, Sun left)', () => {
+    expect(ids('2026-11-02', lastWeek)).toEqual(['streak-2026-11-06']);
+    const it = streakItems('2026-11-02', lastWeek, 7)[0];
+    expect(new Date(it.at).getHours()).toBe(20);
+    expect(it.title).toBe('1-week streak at risk');
+  });
+  it('two sessions done: last chance moves to Sunday', () => {
+    expect(ids('2026-11-04', [...lastWeek, s('2026-11-02'), s('2026-11-04')])).toEqual(['streak-2026-11-08']);
+  });
+  it('no alert once 3 are done, or on a day already trained', () => {
+    expect(ids('2026-11-06', [...lastWeek, s('2026-11-02'), s('2026-11-04'), s('2026-11-06')], 3)).toEqual([]);
+    expect(ids('2026-11-08', [...lastWeek, s('2026-11-02'), s('2026-11-08')], 1)).toEqual([]);
+  });
+  it('nothing to lose with no streak yet', () => {
+    expect(ids('2026-11-02', [])).toEqual([]);
+  });
+  it('future weeks assume the streak carries on', () => {
+    const titles = streakItems('2026-11-02', lastWeek, 14).map((i) => `${i.id} ${i.title}`);
+    expect(titles).toEqual(['streak-2026-11-06 1-week streak at risk', 'streak-2026-11-13 2-week streak at risk']);
+  });
+});

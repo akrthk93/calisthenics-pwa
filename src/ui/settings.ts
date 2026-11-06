@@ -39,7 +39,7 @@ function badgeControl(): string {
 }
 
 const PUSH_NOTE: Record<PushState, string> = {
-  on: 'Mon/Wed/Fri 5:30am: session + weigh-in, waist monthly. Skipped once you’ve logged',
+  on: 'Mon/Wed/Fri 5:30am: session + weigh-in, waist monthly. 8pm if your weekly streak is at risk. Skipped once you’ve logged',
   off: 'Mon/Wed/Fri 5:30am: session + weigh-in, waist monthly',
   denied: 'Blocked. Allow in iOS Settings › Notifications › Cali',
   unsupported: 'Open the app from your home screen to turn this on',

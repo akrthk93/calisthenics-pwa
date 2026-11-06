@@ -1,6 +1,6 @@
 // Scheduled reminders via the shared pwa-push service (Cloudflare Worker).
 import { dayKey } from './dates';
-import { reminderItems } from './logic';
+import { reminderItems, streakItems } from './logic';
 import { store } from './store';
 
 const SERVICE = (import.meta.env.VITE_PUSH_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -100,7 +100,12 @@ export function syncReminders(now = false): Promise<void> {
       async () => {
         try {
           const url = `${location.pathname}#/today`;
-          const items = reminderItems(dayKey(), store.sessions, store.metrics).map((i) => ({ ...i, url }));
+          const today = dayKey();
+          const items = [...reminderItems(today, store.sessions, store.metrics), ...streakItems(today, store.sessions)].map(({ badge, ...i }) => ({
+            ...i,
+            url,
+            ...(badge >= 0 ? { badge } : {}),
+          }));
           const sig = JSON.stringify(items);
           if (sig !== lastSent) {
             await call('/v1/schedule', { items });
