@@ -5,7 +5,8 @@ import { registerSW } from 'virtual:pwa-register';
 import { updateBadges } from './badge';
 import { requestPersistence } from './db';
 import { currentRoute, type Route } from './router';
-import { loadAll } from './store';
+import { loadAll, onChange } from './store';
+import { syncReminders } from './push';
 import { renderHistory } from './ui/history';
 import { renderProgress } from './ui/progress';
 import { mountSession, unmountSession } from './ui/session';
@@ -33,6 +34,7 @@ let lastDay = new Date().toDateString();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   updateBadges();
+  void syncReminders();
   const d = new Date().toDateString();
   if (d !== lastDay && currentRoute() !== 'session') {
     lastDay = d;
@@ -43,9 +45,14 @@ document.addEventListener('visibilitychange', () => {
 async function boot() {
   await loadAll();
   void requestPersistence();
+  onChange(() => {
+    updateBadges();
+    void syncReminders();
+  });
   window.addEventListener('hashchange', render);
   render();
   registerSW({ immediate: true });
+  void syncReminders();
 }
 
 boot().catch((err) => {

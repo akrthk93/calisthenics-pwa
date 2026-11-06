@@ -122,3 +122,34 @@ describe('dueCheckins', () => {
     expect(keys([{ day: '2026-10-07', waistCm: 90 }], '2026-11-03')).toEqual([]);
   });
 });
+
+import { reminderItems } from '../src/logic';
+
+describe('reminderItems', () => {
+  const sess = (day: string) => ({ id: day, at: `${day}T06:50:00.000Z`, day, kind: 'strength' as const, durationSec: 1, entries: [] });
+  it('schedules Mon/Wed/Fri at 5:30 local for 4 weeks', () => {
+    const items = reminderItems('2026-11-06', [], [{ day: '2026-11-01', waistCm: 90 }]); // Fri
+    expect(items.length).toBe(12);
+    expect(items[0].id).toBe('morning-2026-11-06');
+    const d = new Date(items[0].at);
+    expect([d.getDay(), d.getHours(), d.getMinutes()]).toEqual([5, 5, 30]);
+    expect(items[0].title).toBe('Strength session + weigh-in');
+    expect(items[0].badge).toBe(1);
+  });
+  it('adds waist when due, then a month later', () => {
+    const items = reminderItems('2026-11-06', [], [{ day: '2026-10-10', waistCm: 90 }]);
+    const waist = items.filter((i) => i.title.includes('waist')).map((i) => i.id);
+    // Last waist 10 Oct -> due 7 Nov (Sat) -> first training day Mon 9 Nov. Next due 7 Dec, past the 4-week window.
+    expect(waist).toEqual(['morning-2026-11-09']);
+    const long = reminderItems('2026-11-06', [], [{ day: '2026-10-10', waistCm: 90 }], 40).filter((i) => i.title.includes('waist')).map((i) => i.id);
+    expect(long).toEqual(['morning-2026-11-09', 'morning-2026-12-07']);
+    expect(items.find((i) => i.id === 'morning-2026-11-09')!.title).toBe('Strength session, weigh-in + waist');
+    expect(items.find((i) => i.id === 'morning-2026-11-09')!.badge).toBe(2);
+  });
+  it('skips a day once trained and weighed; keeps a weigh-in nudge if only trained', () => {
+    const m = [{ day: '2026-11-01', waistCm: 90 }];
+    expect(reminderItems('2026-11-06', [sess('2026-11-06')], [...m, { day: '2026-11-06', weightKg: 72 }])[0].id).toBe('morning-2026-11-09');
+    const onlyTrained = reminderItems('2026-11-06', [sess('2026-11-06')], m)[0];
+    expect([onlyTrained.id, onlyTrained.title]).toEqual(['morning-2026-11-06', 'Weigh-in']);
+  });
+});

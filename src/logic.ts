@@ -130,3 +130,61 @@ export function dueCheckins(metrics: { day: string; weightKg?: number; waistCm?:
   if (!lastWaist || daysBetween(lastWaist.day, today) >= 28) due.push({ key: 'waist', label: 'Waist measurement' });
   return due;
 }
+
+export interface ReminderItem {
+  id: string;
+  /** Epoch ms. */
+  at: number;
+  title: string;
+  body: string;
+  tag: string;
+  badge: number;
+}
+
+export const REMINDER_TIME = { h: 5, m: 30 };
+
+/**
+ * Morning reminders for the next `days` days: Mon/Wed/Fri at 5:30 local time.
+ * Weigh-in every time; waist when it falls due (28 days after the last one).
+ * A day is left out once both the session and the weigh-in are logged.
+ */
+export function reminderItems(
+  today: string,
+  sessions: Session[],
+  metrics: { day: string; weightKg?: number; waistCm?: number }[],
+  days = 28,
+): ReminderItem[] {
+  const lastWaist = metrics.filter((m) => m.waistCm != null).map((m) => m.day).sort().pop();
+  let waistDue = lastWaist ? addDays(lastWaist, 28) : today;
+  const items: ReminderItem[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = addDays(today, i);
+    if (!isStrengthDay(d)) continue;
+    const trained = sessions.some((s) => s.day === d && countsAsStrength(s));
+    const weighed = metrics.some((m) => m.day === d && m.weightKg != null);
+    const waist = d >= waistDue && !metrics.some((m) => m.day === d && m.waistCm != null);
+    if (trained && weighed && !waist) continue;
+
+    const parts = [!trained && 'Strength session', !weighed && 'weigh-in', waist && 'waist'].filter(Boolean) as string[];
+    const title = parts.length === 1 ? cap(parts[0]) : `${cap(parts.slice(0, -1).join(', '))} + ${parts[parts.length - 1]}`;
+    const body = trained
+      ? 'Log it in the app.'
+      : waist
+        ? 'Weigh in, measure your waist at the navel, then train at 6:35.'
+        : 'Weigh in first, then train at 6:35. About 20 minutes.';
+    const [y, mo, da] = d.split('-').map(Number);
+    items.push({
+      id: `morning-${d}`,
+      at: new Date(y, mo - 1, da, REMINDER_TIME.h, REMINDER_TIME.m).getTime(),
+      title,
+      body,
+      tag: 'morning',
+      badge: (weighed ? 0 : 1) + (waist ? 1 : 0),
+    });
+    // Once a waist reminder is scheduled, the next one is a month later.
+    if (waist) waistDue = addDays(d, 28);
+  }
+  return items;
+}
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

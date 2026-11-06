@@ -1,7 +1,8 @@
 import { dayKey, fmtDay } from '../dates';
 import { exportBackup, importBackup, validateBackup } from '../db';
 import { beep, unlockAudio } from '../device';
-import { appBadgeSupported, enableAppBadge } from '../badge';
+import { appBadgeSupported, enableAppBadge, updateBadges } from '../badge';
+import { disablePush, enablePush, pushState, sendTestPush, type PushState } from '../push';
 import { loadAll, store, updateSettings } from '../store';
 import { confirmSheet, esc, toast } from './util';
 
@@ -37,6 +38,30 @@ function badgeControl(): string {
   return '';
 }
 
+const PUSH_NOTE: Record<PushState, string> = {
+  on: 'Mon/Wed/Fri 5:30am: session + weigh-in, waist monthly. Skipped once you’ve logged',
+  off: 'Mon/Wed/Fri 5:30am: session + weigh-in, waist monthly',
+  denied: 'Blocked. Allow in iOS Settings › Notifications › Cali',
+  unsupported: 'Open the app from your home screen to turn this on',
+  unconfigured: 'Reminder service not set up yet',
+};
+
+async function drawPush(el: HTMLElement) {
+  const row = el.querySelector<HTMLElement>('[data-role=push]');
+  if (!row) return;
+  const st = await pushState().catch(() => 'unsupported' as PushState);
+  const controls =
+    st === 'on'
+      ? '<span class="row gap"><button class="btn ghost small" data-a="push-test">Test</button><button class="btn ghost small" data-a="push-off">Off</button></span>'
+      : st === 'off'
+        ? '<button class="btn primary small" data-a="push-on">Turn on</button>'
+        : '';
+  row.innerHTML = `<span>Morning reminders<small>${esc(PUSH_NOTE[st])}</small></span>${controls}`;
+  // With reminders on, the icon badge comes with them; hide the separate row.
+  const badgeRow = el.querySelector<HTMLElement>('[data-role=badge-row]');
+  if (badgeRow) badgeRow.hidden = st === 'on' || st === 'off';
+}
+
 export function renderSettings(el: HTMLElement) {
   const s = store.settings;
   const lb = lastBackup();
@@ -64,7 +89,8 @@ export function renderSettings(el: HTMLElement) {
 
     <h3 class="section">Reminders</h3>
     <div class="group">
-      <div class="setting"><span>Badge on app icon<small>${esc(badgeNote())}</small></span>${badgeControl()}</div>
+      <div class="setting" data-role="push"><span>Morning reminders<small>Checking…</small></span></div>
+      <div class="setting" data-role="badge-row"><span>Badge on app icon<small>${esc(badgeNote())}</small></span>${badgeControl()}</div>
     </div>
 
     <h3 class="section">Your data</h3>
@@ -91,8 +117,30 @@ export function renderSettings(el: HTMLElement) {
     toast('Saved');
   };
 
+  void drawPush(el);
+
   el.onclick = async (e) => {
     const a = (e.target as HTMLElement).closest<HTMLElement>('[data-a]')?.dataset.a;
+    if (a === 'push-on' || a === 'push-off' || a === 'push-test') {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button')!;
+      btn.disabled = true;
+      try {
+        if (a === 'push-on') {
+          const st = await enablePush();
+          toast(st === 'on' ? 'Reminders on: Mon/Wed/Fri 5:30am' : st === 'denied' ? 'Notifications are blocked for Cali' : 'Not turned on');
+          updateBadges();
+        } else if (a === 'push-off') {
+          await disablePush();
+          toast('Reminders off');
+        } else {
+          const r = await sendTestPush();
+          toast(r.ok ? 'Test sent. Lock your phone to see it' : `Test failed (${String(r.status)})`);
+        }
+      } catch (err) {
+        toast(`Couldn’t reach the reminder service: ${(err as Error).message}`);
+      }
+      return drawPush(el);
+    }
     if (a === 'badge') {
       const r = await enableAppBadge();
       if (r === 'granted') toast('Icon badge on');

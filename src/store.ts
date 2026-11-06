@@ -2,6 +2,14 @@ import * as db from './db';
 import { setSound } from './device';
 import type { BodyMetric, LadderState, ProgressEvent, Session, Settings } from './types';
 
+type Listener = () => void;
+const listeners: Listener[] = [];
+/** Called after any change to sessions, metrics or settings. */
+export function onChange(fn: Listener) {
+  listeners.push(fn);
+}
+const changed = () => listeners.forEach((fn) => fn());
+
 /** In-memory copy of everything, loaded once at start and written through to IndexedDB. */
 export const store = {
   settings: null as unknown as Settings,
@@ -24,6 +32,7 @@ export async function updateSettings(patch: Partial<Settings>) {
   store.settings = { ...store.settings, ...patch };
   setSound(store.settings.sound);
   await db.saveSettings(store.settings);
+  changed();
 }
 
 export async function setLadder(next: LadderState) {
@@ -34,21 +43,25 @@ export async function setLadder(next: LadderState) {
 export async function addSession(s: Session) {
   store.sessions = [s, ...store.sessions.filter((x) => x.id !== s.id)].sort((a, b) => b.at.localeCompare(a.at));
   await db.saveSession(s);
+  changed();
 }
 
 export async function removeSession(id: string) {
   store.sessions = store.sessions.filter((s) => s.id !== id);
   await db.deleteSession(id);
+  changed();
 }
 
 export async function addMetric(m: BodyMetric) {
   store.metrics = [m, ...store.metrics.filter((x) => x.id !== m.id)].sort((a, b) => b.day.localeCompare(a.day));
   await db.saveMetric(m);
+  changed();
 }
 
 export async function removeMetric(id: string) {
   store.metrics = store.metrics.filter((m) => m.id !== id);
   await db.deleteMetric(id);
+  changed();
 }
 
 export async function addEvent(e: ProgressEvent) {
