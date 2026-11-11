@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { dayKey } from './dates';
-import { initialLadders } from './logic';
+import { initialLadders, migrateLadders } from './logic';
 import type { Backup, BodyMetric, LadderState, ProgressEvent, Session, Settings } from './types';
 
 interface Schema extends DBSchema {
@@ -42,23 +42,30 @@ export async function saveSettings(s: Settings) {
   await (await db()).put('kv', s, 'settings');
 }
 
+/**
+ * Track positions in the 100-step program, stored under "tracks".
+ * Data from before the program (the "ladders" key) is carried over once, by exercise.
+ */
 export async function getLadders(): Promise<LadderState[]> {
-  const l = (await (await db()).get('kv', 'ladders')) as LadderState[] | undefined;
+  const d = await db();
   const fresh = initialLadders(dayKey());
-  if (l) {
-    // Add any ladders introduced after this data was created.
-    const missing = fresh.filter((f) => !l.some((x) => x.id === f.id));
-    if (!missing.length) return l;
-    const merged = [...l, ...missing];
+  const t = (await d.get('kv', 'tracks')) as LadderState[] | undefined;
+  if (t) {
+    // Add any tracks introduced after this data was created.
+    const missing = fresh.filter((f) => !t.some((x) => x.id === f.id));
+    if (!missing.length) return t;
+    const merged = [...t, ...missing];
     await saveLadders(merged);
     return merged;
   }
-  await saveLadders(fresh);
-  return fresh;
+  const old = (await d.get('kv', 'ladders')) as LadderState[] | undefined;
+  const tracks = old ? migrateLadders(old, dayKey()) : fresh;
+  await saveLadders(tracks);
+  return tracks;
 }
 
 export async function saveLadders(l: LadderState[]) {
-  await (await db()).put('kv', l, 'ladders');
+  await (await db()).put('kv', l, 'tracks');
 }
 
 export async function getSessions(): Promise<Session[]> {
@@ -99,7 +106,7 @@ export async function saveEvent(e: ProgressEvent) {
 export async function exportBackup(): Promise<Backup> {
   return {
     app: 'calisthenics-pwa',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     settings: await getSettings(),
     ladders: await getLadders(),
@@ -111,7 +118,7 @@ export async function exportBackup(): Promise<Backup> {
 
 export function validateBackup(x: unknown): x is Backup {
   const b = x as Backup;
-  return !!b && b.app === 'calisthenics-pwa' && b.version === 1 && Array.isArray(b.sessions) && Array.isArray(b.ladders) && !!b.settings;
+  return !!b && b.app === 'calisthenics-pwa' && (b.version === 1 || b.version === 2) && Array.isArray(b.sessions) && Array.isArray(b.ladders) && !!b.settings;
 }
 
 /** Replaces all data with the backup. */
@@ -125,7 +132,8 @@ export async function importBackup(b: Backup) {
     tx.objectStore('events').clear(),
   ]);
   await tx.objectStore('kv').put(b.settings, 'settings');
-  await tx.objectStore('kv').put(b.ladders, 'ladders');
+  // v1 backups hold pre-program ladder positions; v2 holds program track positions.
+  await tx.objectStore('kv').put(b.version === 1 ? migrateLadders(b.ladders, dayKey()) : b.ladders, 'tracks');
   for (const s of b.sessions) await tx.objectStore('sessions').put(s);
   for (const m of b.metrics ?? []) await tx.objectStore('metrics').put(m);
   for (const e of b.events ?? []) await tx.objectStore('events').put(e);

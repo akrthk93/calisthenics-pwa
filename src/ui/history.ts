@@ -1,5 +1,6 @@
 import { fmtDay, fmtDuration, weekStart } from '../dates';
-import { findStep, ladder } from '../data/exercises';
+import { findStep } from '../data/exercises';
+import { ladder } from '../data/program';
 import { removeSession, store } from '../store';
 import { confirmSheet, esc } from './util';
 
@@ -25,7 +26,13 @@ export function renderHistory(el: HTMLElement) {
               const moved = ups.filter((u) => weekStart(u.day) === w && u.toIndex > u.fromIndex);
               return `
           <h3 class="section">Week of ${esc(fmtDay(w, { day: 'numeric', month: 'short' }))} <small class="muted">· ${strength} strength · ${walks} walk${walks === 1 ? '' : 's'}</small></h3>
-          ${moved.map((u) => `<div class="banner good small">⬆ ${esc(ladder(u.ladderId).name)}: ${esc(ladder(u.ladderId).steps[u.toIndex].name)}</div>`).join('')}
+          ${moved
+            .filter((u) => u.stepKey)
+            .map((u) => {
+              const from = ladder(u.ladderId).steps[u.fromIndex];
+              return from ? `<div class="banner good small">✓ Step ${from.n} cleared · ${esc(from.name)} ${esc(from.label)}</div>` : '';
+            })
+            .join('')}
           ${list
             .map(
               (s) => `

@@ -1,14 +1,15 @@
-import { COOLDOWN, PULL_APART, WARMUP, findStep, ladder, unit, type GuidedMove, type LadderId, type Step } from '../data/exercises';
+import { COOLDOWN, PULL_APART, WARMUP, findStep, unit, type GuidedMove, type Step } from '../data/exercises';
+import { ladder, type LadderId, type ProgramStep } from '../data/program';
 import { dayKey, fmtClock, fmtDuration } from '../dates';
 import { uid } from '../db';
 import { keepAwake, unlockAudio } from '../device';
-import { currentStep, ladderStatus, plannedSets } from '../logic';
+import { currentStep, plannedSets } from '../logic';
 import { addSession, ladderState, store } from '../store';
 import { Timer } from '../timer';
 import type { Entry, Session, SessionKind } from '../types';
 import { showDemo } from './demo';
 import { confirmSheet, esc, toast } from './util';
-import { renderPromotions } from './promote';
+import { NEEDS_DECISION, program, renderPromotions, trackStatus } from './promote';
 import { navigate } from '../router';
 
 type FlowStep =
@@ -80,9 +81,13 @@ const PAIRS: { label: string; ladders: LadderId[] }[] = [
   { label: 'C', ladders: ['core'] },
 ];
 
-function stepOf(id: LadderId): Step {
-  return currentStep(ladderState(id));
+/** The track's current step if it can be trained now (not finished, not in a locked block). */
+function stepOf(id: LadderId, allowed: number): ProgramStep | null {
+  const step = currentStep(ladderState(id));
+  return step && step.block <= allowed ? step : null;
 }
+
+const BAR_TRACKS: LadderId[] = ['vpull', 'dip', 'hang'];
 
 export function buildFlow(kind: SessionKind | 'walk-only'): Omit<Run, 'id' | 'startedAt' | 'day'> {
   const today = dayKey();
@@ -94,12 +99,17 @@ export function buildFlow(kind: SessionKind | 'walk-only'): Omit<Run, 'id' | 'st
     ladderOf[step.id] = ladderId;
   };
 
+  const allowed = program().allowed;
+
   if (kind === 'strength') {
     const sets = plannedSets(store.settings, today);
     const groups = PAIRS.map((p) => ({
       label: p.label,
-      items: p.ladders.map((l) => ({ ladderId: l as LadderId | null, step: stepOf(l), sets })),
-    }));
+      items: p.ladders.flatMap((l) => {
+        const step = stepOf(l, allowed);
+        return step ? [{ ladderId: l as LadderId | null, step: step as Step, sets }] : [];
+      }),
+    })).filter((g) => g.items.length);
     if (store.settings.hasBands) groups.push({ label: 'Finisher', items: [{ ladderId: null, step: PULL_APART, sets: 1 }] });
 
     WARMUP.forEach((_, idx) => flow.push({ t: 'warmup', idx }));
@@ -121,19 +131,26 @@ export function buildFlow(kind: SessionKind | 'walk-only'): Omit<Run, 'id' | 'st
     COOLDOWN.forEach((_, idx) => flow.push({ t: 'cooldown', idx }));
   } else if (kind === 'minimum') {
     (['push', 'row', 'squat'] as LadderId[]).forEach((l) => {
-      const step = stepOf(l);
+      const step = stepOf(l, allowed);
+      if (!step) return;
       add(l, step, 1);
       flow.push({ t: 'work', ladderId: l, stepId: step.id, set: 1, of: 1, label: 'Min' });
     });
   } else if (kind === 'walk') {
-    const step = stepOf('vpull');
     const sets = plannedSets(store.settings, today);
-    add('vpull', step, sets);
+    const bar = BAR_TRACKS.flatMap((id) => {
+      const step = stepOf(id, allowed);
+      return step ? [{ id, step }] : [];
+    });
     flow.push({ t: 'walk', phase: 'out' });
-    for (let set = 1; set <= sets; set++) {
-      flow.push({ t: 'work', ladderId: 'vpull', stepId: step.id, set, of: sets, label: 'Bar' });
-      if (set < sets) flow.push({ t: 'rest', seconds: store.settings.barRestSec, next: step.name, nextId: step.id });
-    }
+    bar.forEach(({ id, step }, bi) => {
+      add(id, step, sets);
+      for (let set = 1; set <= sets; set++) {
+        flow.push({ t: 'work', ladderId: id, stepId: step.id, set, of: sets, label: 'Bar' });
+        const next = set < sets ? step : bar[bi + 1]?.step;
+        if (next) flow.push({ t: 'rest', seconds: store.settings.barRestSec, next: next.name, nextId: next.id });
+      }
+    });
     flow.push({ t: 'walk', phase: 'home' });
   } else {
     flow.push({ t: 'walk', phase: 'only' });
@@ -335,15 +352,16 @@ function moveAsStep(m: GuidedMove, label: string): Step {
 }
 
 function drawWork(s: Extract<FlowStep, { t: 'work' }>) {
-  const found = findStep(s.stepId)!;
-  const step = found.step;
+  const prog = s.ladderId ? currentStep(ladderState(s.ladderId)) : null;
+  const ps: ProgramStep | null = prog && prog.id === s.stepId ? prog : null;
+  const step: Step = ps ?? findStep(s.stepId)!.step;
   const logged = run!.logs[s.stepId]?.[s.set - 1];
   const prev = lastValue(step, s.set);
   let value = logged ?? prev ?? step.min;
   const isHold = step.metric === 'hold';
   const ladderName = s.ladderId ? ladder(s.ladderId).name : 'Finisher';
-  const targetTxt = `${step.min}–${step.max}${unit(step) ? ' ' + unit(step).trim() : ' reps'}`;
-  const tip = run!.kind === 'minimum' ? 'One easy set. It counts.' : s.set === 1 && cur() === run!.flow.find((f) => f.t === 'work') ? isHold ? '' : 'Stop each set with reps left in the tank.' : '';
+  const targetTxt = ps ? ps.label : `${step.min}–${step.max}${unit(step) ? ' ' + unit(step).trim() : ' reps'}`;
+  const tip = run!.kind === 'minimum' ? 'One easy set. It counts.' : ps?.test === 'single' && s.set === 1 ? 'Test set: give this one everything, then the rest are practice.' : s.set === 1 && cur() === run!.flow.find((f) => f.t === 'work') ? isHold ? '' : 'Stop each set with reps left in the tank.' : '';
 
   const pips = Array.from({ length: s.of }, (_, k) => `<i class="${k < s.set - 1 ? 'done' : k === s.set - 1 ? 'now' : ''}"></i>`).join('');
 
@@ -351,11 +369,11 @@ function drawWork(s: Extract<FlowStep, { t: 'work' }>) {
     ${topBar(KIND_TITLE[run!.kind])}
     <section class="run-body work">
       <div class="work-head">
-        <p class="eyebrow">${esc(s.label)} · ${esc(ladderName)}</p>
+        <p class="eyebrow">${esc(s.label)} · ${esc(ladderName)}${ps ? ` · Step ${ps.n}` : ''}</p>
         <div class="pips" aria-label="Set ${s.set} of ${s.of}">${pips}<span>Set ${s.set}/${s.of}</span></div>
       </div>
       <h1 class="ex-name">${esc(step.name)}</h1>
-      <p class="target">Target <b>${esc(targetTxt)}</b>${prev != null ? ` · last <b>${prev}${isHold ? 's' : ''}</b>` : ''}</p>
+      <p class="target">${ps?.test === 'single' ? 'Test' : 'Target'} <b>${esc(targetTxt)}</b>${prev != null ? ` · last <b>${prev}${isHold ? 's' : ''}</b>` : ''}</p>
       ${isHold ? ring(`${value}`, 1, 'seconds') : ''}
       <div class="stepper${isHold ? ' compact' : ''}">
         <button class="step-btn" data-a="dec" aria-label="Less">−</button>
@@ -564,9 +582,9 @@ async function saveRun(entries: Entry[], dur: number, walkMin?: number) {
   void keepAwake(false);
 
   // Offer progressions for ladders trained in this session.
-  const today = dayKey();
   const touched = [...new Set(entries.map((e) => e.ladderId).filter(Boolean))] as LadderId[];
-  const ready = touched.filter((id) => ['ready', 'needs-bands', 'stalled'].includes(ladderStatus(ladderState(id), store.sessions, store.settings, today).kind));
+  const p = program();
+  const ready = touched.filter((id) => NEEDS_DECISION.includes(trackStatus(id, p).kind));
   if (ready.length) {
     root.innerHTML = `<section class="run-body"><p class="eyebrow">Saved</p><h1>Progress check</h1><div data-role="promos"></div></section>
       <footer class="run-actions"><button class="btn primary big" data-a="home">Done</button></footer>`;

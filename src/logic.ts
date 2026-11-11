@@ -1,4 +1,5 @@
-import { LADDERS, ladder, type LadderId, type Step } from './data/exercises';
+import type { Step } from './data/exercises';
+import { HABITS, LADDERS, PILLARS, ladder, type Block, type LadderId, type PillarId, type ProgramStep } from './data/program';
 import { addDays, daysBetween, isStrengthDay, weekStart, weekday } from './dates';
 import type { LadderState, Session, Settings } from './types';
 
@@ -10,42 +11,56 @@ export function plannedSets(settings: Settings, day: string): number {
   return daysBetween(settings.startDate, day) < 14 ? 2 : 3;
 }
 
-/** Ladder steps in order, as the person can do them now. */
-export function currentStep(state: LadderState): Step {
-  const l = ladder(state.id);
-  return l.steps[Math.min(state.stepIndex, l.steps.length - 1)];
+/** The step a track is on now, or null once the track's finish line is passed. */
+export function currentStep(state: LadderState): ProgramStep | null {
+  return ladder(state.id).steps[state.stepIndex] ?? null;
 }
 
 export type LadderStatus =
   | { kind: 'working'; sessionsAtTop: number }
-  | { kind: 'ready'; next: Step }
-  | { kind: 'needs-bands'; next: Step }
-  | { kind: 'maxed' }
+  | { kind: 'ready'; next: ProgramStep }
+  | { kind: 'finish' }
+  | { kind: 'needs-bands'; next: ProgramStep }
+  | { kind: 'gated'; next: ProgramStep; block: Block }
+  | { kind: 'locked'; block: Block }
+  | { kind: 'complete' }
   | { kind: 'stalled'; days: number };
 
-/** A logged entry hits the progression bar: all planned sets done, each at the top of the range. */
+/** A logged entry hits the progression bar: all planned sets done, each at the target. */
 export function entryAtTop(step: Step, sets: number[], planned: number): boolean {
   return sets.length >= planned && sets.slice(0, planned).every((v) => v >= step.max);
 }
 
+/** Has the current step been passed? `sets`: target on every set, 2 sessions running. `single`: one set at target, once. */
+export function stepPassed(step: ProgramStep, entries: { sets: number[]; planned: number }[]): boolean {
+  if (step.test === 'single') return entries.some((e) => e.sets.some((v) => v >= step.max));
+  const lastTwo = entries.slice(0, 2);
+  return lastTwo.length === 2 && lastTwo.every((e) => entryAtTop(step, e.sets, e.planned));
+}
+
+/** Entries for the track's current step since it started, newest first. Minimum sessions don't count. */
+function stepEntries(state: LadderState, step: ProgramStep, sessions: Session[]) {
+  return sessions
+    .filter((s) => s.day >= state.since && s.kind !== 'minimum')
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .flatMap((s) => s.entries.filter((e) => e.stepId === step.id && (e.ladderId == null || e.ladderId === state.id)));
+}
+
 /**
- * Progress rule: top of the range for every set, clean form, 2 sessions in a row
- * at the current step. Stall: 3+ weeks at a step with no progress.
+ * Where a track stands. `allowed` is the highest block any step may be in (see programState):
+ * a pillar can run at most one block ahead of the slowest pillar.
  */
-export function ladderStatus(state: LadderState, sessions: Session[], settings: Settings, today: string): LadderStatus {
+export function ladderStatus(state: LadderState, sessions: Session[], settings: Settings, today: string, allowed: Block = 4): LadderStatus {
   const l = ladder(state.id);
   const step = currentStep(state);
-  const entries = sessions
-    .filter((s) => s.day >= state.since)
-    .sort((a, b) => b.at.localeCompare(a.at))
-    .flatMap((s) => s.entries.filter((e) => e.stepId === step.id && s.kind !== 'minimum'));
+  if (!step) return { kind: 'complete' };
+  if (step.block > allowed) return { kind: 'locked', block: step.block };
+  const entries = stepEntries(state, step, sessions);
 
-  const lastTwo = entries.slice(0, 2);
-  const ready = lastTwo.length === 2 && lastTwo.every((e) => entryAtTop(step, e.sets, e.planned));
-
-  if (ready) {
+  if (stepPassed(step, entries)) {
     const next = l.steps[state.stepIndex + 1];
-    if (!next) return { kind: 'maxed' };
+    if (!next) return { kind: 'finish' };
+    if (next.block > allowed) return { kind: 'gated', next, block: next.block };
     if (next.needsBands && !settings.hasBands) return { kind: 'needs-bands', next };
     return { kind: 'ready', next };
   }
@@ -55,6 +70,93 @@ export function ladderStatus(state: LadderState, sessions: Session[], settings: 
 
   const sessionsAtTop = entries.length && entryAtTop(step, entries[0].sets, entries[0].planned) ? 1 : 0;
   return { kind: 'working', sessionsAtTop };
+}
+
+// ---------- habits ----------
+
+function weekCounts(sessions: Session[], pred: (s: Session) => boolean): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const s of sessions.filter(pred)) m.set(weekStart(s.day), (m.get(weekStart(s.day)) ?? 0) + 1);
+  return m;
+}
+
+/** Longest run of consecutive Mon–Sun weeks with 3+ strength sessions, ever. */
+export function longestStreak(sessions: Session[]): number {
+  const weeks = [...weekCounts(sessions, countsAsStrength).entries()].filter(([, n]) => n >= 3).map(([w]) => w).sort();
+  let best = 0;
+  let run = 0;
+  let prev = '';
+  for (const w of weeks) {
+    run = prev && addDays(prev, 7) === w ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = w;
+  }
+  return best;
+}
+
+/** Which habit steps are earned, by key. Checked from the log, so they can't be ticked by hand. */
+export function habitsEarned(sessions: Session[], metrics: { day: string; weightKg?: number; waistCm?: number }[]): Record<string, boolean> {
+  const strength = weekCounts(sessions, countsAsStrength);
+  const walks = weekCounts(sessions, (s) => s.kind === 'walk');
+  const weighIns = new Map<string, number>();
+  for (const m of metrics) if (m.weightKg != null) weighIns.set(weekStart(m.day), (weighIns.get(weekStart(m.day)) ?? 0) + 1);
+  const streak = longestStreak(sessions);
+  const total = sessions.filter(countsAsStrength).length;
+  return {
+    'habit-01': [...strength.values()].some((n) => n >= 3),
+    'habit-02': sessions.some((s) => s.kind === 'walk'),
+    'habit-03': [...weighIns.values()].some((n) => n >= 3),
+    'habit-04': metrics.some((m) => m.waistCm != null),
+    'habit-05': streak >= 2,
+    'habit-06': [...strength.entries()].some(([w, n]) => n >= 3 && (walks.get(w) ?? 0) >= 2),
+    'habit-07': streak >= 4,
+    'habit-08': total >= 25,
+    'habit-09': streak >= 8,
+    'habit-10': streak >= 12,
+  };
+}
+
+// ---------- overall progress ----------
+
+export interface ProgramState {
+  /** Steps cleared, out of TOTAL_STEPS. */
+  score: number;
+  /** The slowest pillar's block (5 once everything is done). */
+  block: number;
+  /** Highest block a step may be in right now. */
+  allowed: Block;
+  habits: Record<string, boolean>;
+  pillars: Record<PillarId, { done: number; total: number; block: number }>;
+}
+
+export function programState(tracks: LadderState[], sessions: Session[], metrics: { day: string; weightKg?: number; waistCm?: number }[]): ProgramState {
+  const habits = habitsEarned(sessions, metrics);
+  const pillars = {} as ProgramState['pillars'];
+  let score = 0;
+  for (const p of PILLARS) {
+    if (p.id === 'habits') {
+      const done = HABITS.filter((h) => habits[h.key]).length;
+      const next = HABITS.find((h) => !habits[h.key]);
+      pillars.habits = { done, total: HABITS.length, block: next ? next.block : 5 };
+      score += done;
+      continue;
+    }
+    let done = 0;
+    let total = 0;
+    let block = 5;
+    for (const id of p.tracks) {
+      const st = tracks.find((t) => t.id === id);
+      const steps = ladder(id).steps;
+      const idx = Math.min(st?.stepIndex ?? 0, steps.length);
+      done += idx;
+      total += steps.length;
+      block = Math.min(block, steps[idx]?.block ?? 5);
+    }
+    pillars[p.id] = { done, total, block };
+    score += done;
+  }
+  const slowest = Math.min(...Object.values(pillars).map((p) => p.block));
+  return { score, block: slowest, allowed: Math.min(4, slowest + 1) as Block, habits, pillars };
 }
 
 export const countsAsStrength = (s: Session) => s.kind === 'strength' || s.kind === 'minimum';
@@ -96,7 +198,31 @@ export function missedLastSlot(sessions: Session[], today: string, startDate: st
 }
 
 export function initialLadders(today: string): LadderState[] {
-  return LADDERS.map((l) => ({ id: l.id as LadderId, stepIndex: 0, since: today }));
+  return LADDERS.map((l) => ({ id: l.id, stepIndex: 0, since: today }));
+}
+
+// Exercise order of each track before the 100-step program (v1.x), to carry progress over.
+const OLD_LADDERS: Partial<Record<LadderId, string[]>> = {
+  push: ['push-wall', 'push-counter', 'push-table', 'push-low', 'push-floor', 'push-pause', 'push-diamond'],
+  row: ['row-door', 'row-seated', 'row-standing-light', 'row-standing-medium', 'row-squeeze'],
+  vpull: ['vp-hang', 'vp-scap', 'vp-inverted', 'vp-negative', 'vp-band', 'vp-full'],
+  squat: ['sq-box', 'sq-body', 'sq-tempo', 'sq-split', 'sq-rfess'],
+  hinge: ['hg-bridge', 'hg-pause', 'hg-single', 'hg-band-gm'],
+  core: ['core-deadbug', 'core-kneeplank', 'core-plank', 'core-hollow'],
+};
+
+/** Maps old ladder positions onto the first program step that uses the same exercise. */
+export function migrateLadders(old: { id: string; stepIndex: number; since: string }[], today: string): LadderState[] {
+  return initialLadders(today).map((fresh) => {
+    const o = old.find((x) => x.id === fresh.id);
+    const ids = OLD_LADDERS[fresh.id];
+    if (!o || !ids) return fresh;
+    let ex = ids[Math.min(o.stepIndex, ids.length - 1)];
+    if (ex === 'push-pause' || ex === 'push-diamond') ex = 'push-floor';
+    const steps = ladder(fresh.id).steps;
+    const idx = steps.findIndex((s) => s.id === ex);
+    return { id: fresh.id, stepIndex: Math.max(0, idx), since: o.since };
+  });
 }
 
 /** Sum of reps (or seconds) across sets — used for the progress sparkline. */

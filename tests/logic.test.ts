@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ladderStatus, missedLastSlot, plannedSets, slotFor, weekStreak } from '../src/logic';
+import { habitsEarned, initialLadders, longestStreak, migrateLadders, programState, ladderStatus, missedLastSlot, plannedSets, slotFor, weekStreak } from '../src/logic';
 import type { LadderState, Session, Settings } from '../src/types';
+import { HABITS, LADDERS, TOTAL_STEPS, ladder } from '../src/data/program';
+import { addDays } from '../src/dates';
 
 const settings = (p: Partial<Settings> = {}): Settings => ({
   startDate: '2026-10-26', // Monday
@@ -38,40 +40,129 @@ describe('plannedSets', () => {
   });
 });
 
-describe('ladderStatus', () => {
-  it('is ready after two sessions in a row at the top of the range', () => {
-    const s = [sess('2026-11-11', 'strength', [push([12, 12, 12])]), sess('2026-11-13', 'strength', [push([12, 12, 12])])];
+describe('ladderStatus (step 1: wall pushup 3×10)', () => {
+  const at = (sets: number[]) => push(sets);
+  it('passes after two sessions in a row with every set at target', () => {
+    const s = [sess('2026-11-11', 'strength', [at([10, 10, 10])]), sess('2026-11-13', 'strength', [at([10, 11, 12])])];
     const st = ladderStatus(pushState, s, settings(), '2026-11-13');
     expect(st.kind).toBe('ready');
+    expect(st.kind === 'ready' && st.next.label).toBe('3×15');
   });
-  it('is not ready if only the latest session hit the top', () => {
-    const s = [sess('2026-11-11', 'strength', [push([12, 11, 10])]), sess('2026-11-13', 'strength', [push([12, 12, 12])])];
-    const st = ladderStatus(pushState, s, settings(), '2026-11-13');
-    expect(st).toEqual({ kind: 'working', sessionsAtTop: 1 });
+  it('is not passed if only the latest session hit it', () => {
+    const s = [sess('2026-11-11', 'strength', [at([10, 9, 8])]), sess('2026-11-13', 'strength', [at([10, 10, 10])])];
+    expect(ladderStatus(pushState, s, settings(), '2026-11-13')).toEqual({ kind: 'working', sessionsAtTop: 1 });
   });
   it('requires all planned sets', () => {
-    const s = [sess('2026-11-11', 'strength', [push([12, 12])]), sess('2026-11-13', 'strength', [push([12, 12])])];
+    const s = [sess('2026-11-11', 'strength', [at([10, 10])]), sess('2026-11-13', 'strength', [at([10, 10])])];
     expect(ladderStatus(pushState, s, settings(), '2026-11-13').kind).toBe('working');
   });
   it('ignores minimum sessions', () => {
-    const s = [sess('2026-11-11', 'strength', [push([12, 12, 12])]), sess('2026-11-13', 'minimum', [push([12], 1)])];
+    const s = [sess('2026-11-11', 'strength', [at([10, 10, 10])]), sess('2026-11-13', 'minimum', [push([12], 1)])];
     expect(ladderStatus(pushState, s, settings(), '2026-11-13').kind).toBe('working');
   });
   it('blocks band steps without bands', () => {
-    const row: LadderState = { id: 'row', stepIndex: 0, since: '2026-10-26' };
+    const row: LadderState = { id: 'row', stepIndex: 1, since: '2026-10-26' }; // doorframe row 3×15 -> seated band row
     const e = { ladderId: 'row' as const, stepId: 'row-door', planned: 2, sets: [15, 15] };
     const s = [sess('2026-10-28', 'strength', [e]), sess('2026-10-30', 'strength', [e])];
     expect(ladderStatus(row, s, settings(), '2026-10-30').kind).toBe('needs-bands');
     expect(ladderStatus(row, s, settings({ hasBands: true }), '2026-10-30').kind).toBe('ready');
   });
   it('flags a stall after 3 weeks without progress', () => {
-    const s = ['2026-10-26', '2026-10-28', '2026-10-30', '2026-11-16'].map((d) => sess(d, 'strength', [push([8, 8, 7])]));
+    const s = ['2026-10-26', '2026-10-28', '2026-10-30', '2026-11-16'].map((d) => sess(d, 'strength', [at([8, 8, 7])]));
     expect(ladderStatus(pushState, s, settings(), '2026-11-16').kind).toBe('stalled');
   });
   it('only counts sessions since the current step started', () => {
-    const s = [sess('2026-11-11', 'strength', [push([12, 12, 12])]), sess('2026-11-13', 'strength', [push([12, 12, 12])])];
-    const fresh: LadderState = { ...pushState, since: '2026-11-14' };
-    expect(ladderStatus(fresh, s, settings(), '2026-11-14').kind).toBe('working');
+    const s = [sess('2026-11-11', 'strength', [at([10, 10, 10])]), sess('2026-11-13', 'strength', [at([10, 10, 10])])];
+    expect(ladderStatus({ ...pushState, since: '2026-11-14' }, s, settings(), '2026-11-14').kind).toBe('working');
+  });
+  it('single-set tests pass the first time any set hits the target', () => {
+    const last = ladder('push').steps.length - 1; // 20 pushups in a row
+    const st: LadderState = { id: 'push', stepIndex: last, since: '2026-11-01' };
+    const e = (sets: number[]) => ({ ladderId: 'push' as const, stepId: 'push-floor', planned: 3, sets });
+    expect(ladderStatus(st, [sess('2026-11-02', 'strength', [e([18, 12, 10])])], settings(), '2026-11-02').kind).toBe('working');
+    expect(ladderStatus(st, [sess('2026-11-04', 'strength', [e([20, 12, 10])])], settings(), '2026-11-04').kind).toBe('finish');
+    expect(ladderStatus({ ...st, stepIndex: last + 1 }, [], settings(), '2026-11-04').kind).toBe('complete');
+  });
+  it('holds back a passed step whose next step is in a locked block', () => {
+    const st: LadderState = { id: 'push', stepIndex: 3, since: '2026-11-01' }; // counter 3×12, next is Block 2
+    const e = { ladderId: 'push' as const, stepId: 'push-counter', planned: 3, sets: [12, 12, 12] };
+    const s = [sess('2026-11-02', 'strength', [e]), sess('2026-11-04', 'strength', [e])];
+    expect(ladderStatus(st, s, settings(), '2026-11-04', 1).kind).toBe('gated');
+    expect(ladderStatus(st, s, settings(), '2026-11-04', 2).kind).toBe('ready');
+  });
+  it('a track whose current step is beyond the open blocks is locked', () => {
+    expect(ladderStatus({ id: 'hang', stepIndex: 0, since: '2026-11-01' }, [], settings(), '2026-11-01', 2)).toEqual({ kind: 'locked', block: 3 });
+  });
+});
+
+describe('the 100-step program', () => {
+  const all = [...LADDERS.flatMap((l) => l.steps), ...HABITS];
+  it('has exactly 100 steps, numbered 1–100 in block order', () => {
+    expect(TOTAL_STEPS).toBe(100);
+    expect(all.map((x) => x.n).sort((a, b) => a - b)).toEqual(Array.from({ length: 100 }, (_, i) => i + 1));
+    const byN = [...all].sort((a, b) => a.n - b.n);
+    expect(byN.every((x, i) => i === 0 || x.block >= byN[i - 1].block)).toBe(true);
+  });
+  it('blocks never go backwards within a track, and every track starts in Block 1–3', () => {
+    for (const l of LADDERS) {
+      expect(l.steps.every((x, i) => i === 0 || x.block >= l.steps[i - 1].block)).toBe(true);
+      expect(l.steps[0].block).toBeLessThanOrEqual(3);
+    }
+  });
+  it('ends at the agreed finish lines', () => {
+    const finish = LADDERS.flatMap((l) => l.steps.filter((x) => x.finish).map((x) => `${x.track}: ${x.name}`));
+    expect(finish).toEqual([
+      'push: 20 pushups in a row',
+      'dip: 10 dips in a row',
+      'vpull: 5 pull-ups in a row',
+      'squat: A pistol squat on each leg',
+      'hang: 10 hanging knee raises in a row',
+      'hang: Tuck L-sit for 10s',
+    ]);
+  });
+});
+
+describe('programState and gating', () => {
+  it('starts at 0/100 in Block 1 with Block 2 open', () => {
+    const p = programState(initialLadders('2026-11-11'), [], []);
+    expect([p.score, p.block, p.allowed]).toEqual([0, 1, 2]);
+  });
+  it('counts cleared steps and earned habits', () => {
+    const tracks = initialLadders('2026-11-11').map((t) => (t.id === 'push' ? { ...t, stepIndex: 4 } : t));
+    const p = programState(tracks, [sess('2026-11-11', 'walk')], [{ day: '2026-11-11', waistCm: 90 }]);
+    expect(p.score).toBe(4 + 2); // 4 push steps + first walk + first waist check
+    expect(p.pillars.push).toEqual({ done: 4, total: 24, block: 2 });
+  });
+  it('the slowest pillar sets the block, habits included', () => {
+    const tracks = LADDERS.map((l) => ({ id: l.id, stepIndex: l.steps.findIndex((x) => x.block >= 2), since: '2026-11-11' }));
+    expect(programState(tracks, [], []).block).toBe(1); // habits not done yet
+  });
+});
+
+describe('habitsEarned', () => {
+  it('reads streaks, walks and check-ins from the log', () => {
+    const weeks = ['2026-10-26', '2026-11-02'].flatMap((m) => [0, 2, 4].map((d) => sess(addDays(m, d))));
+    const h = habitsEarned([...weeks, sess('2026-11-03', 'walk'), sess('2026-11-05', 'walk')], [
+      { day: '2026-11-02', weightKg: 72 }, { day: '2026-11-04', weightKg: 72 }, { day: '2026-11-06', weightKg: 71.8 },
+    ]);
+    expect(Object.entries(h).filter(([, v]) => v).map(([k]) => k)).toEqual(['habit-01', 'habit-02', 'habit-03', 'habit-05', 'habit-06']);
+    expect(longestStreak(weeks)).toBe(2);
+  });
+});
+
+describe('migrateLadders', () => {
+  it('carries old ladder positions over by exercise', () => {
+    const old = [
+      { id: 'push', stepIndex: 2, since: '2026-11-01' }, // table incline
+      { id: 'vpull', stepIndex: 4, since: '2026-11-02' }, // band-assisted
+      { id: 'core', stepIndex: 0, since: '2026-10-28' },
+    ];
+    const t = migrateLadders(old, '2026-11-11');
+    const step = (id: string) => { const s = t.find((x) => x.id === id)!; return [ladder(s.id).steps[s.stepIndex]?.name, s.since]; };
+    expect(step('push')).toEqual(['Table incline pushup', '2026-11-01']);
+    expect(step('vpull')).toEqual(['Band-assisted pull-up (30 kg band)', '2026-11-02']);
+    expect(step('core')).toEqual(['Dead bug', '2026-10-28']);
+    expect(step('dip')).toEqual(['Parallel bar support hold', '2026-11-11']);
   });
 });
 

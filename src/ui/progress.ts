@@ -1,11 +1,11 @@
-import { LADDERS, ladder, unit, type LadderId } from '../data/exercises';
+import { BLOCKS, HABITS, LADDERS, PILLARS, TOTAL_STEPS, ladder, type Block, type LadderId } from '../data/program';
 import { dayKey, fmtDay } from '../dates';
 import { uid } from '../db';
-import { currentStep, dueCheckins, ladderStatus, volume, weeklyAvgWeight } from '../logic';
+import { currentStep, dueCheckins, volume, weeklyAvgWeight } from '../logic';
 import { updateBadges } from '../badge';
 import { addMetric, ladderState, removeMetric, store } from '../store';
 import { showDemo } from './demo';
-import { moveLadder, renderPromotions, statusLabel } from './promote';
+import { NEEDS_DECISION, moveLadder, program, renderPromotions, statusLabel, trackStatus } from './promote';
 import { confirmSheet, esc, toast } from './util';
 
 /** Tiny inline SVG sparkline. */
@@ -23,6 +23,7 @@ function sparkline(values: number[]): string {
 /** Total volume per session for the current step of a ladder, oldest → newest, last 10. */
 function trend(id: LadderId): number[] {
   const step = currentStep(ladderState(id));
+  if (!step) return [];
   return store.sessions
     .slice()
     .reverse()
@@ -34,9 +35,10 @@ export function renderProgress(el: HTMLElement) {
   const today = dayKey();
   const s = store.settings;
   const due = dueCheckins(store.metrics, today);
-  const attention = store.ladders
-    .filter((l) => ['ready', 'needs-bands', 'stalled'].includes(ladderStatus(l, store.sessions, s, today).kind))
-    .map((l) => l.id);
+  const prog = program();
+  const attention = store.ladders.filter((l) => [...NEEDS_DECISION, 'gated'].includes(trackStatus(l.id, prog).kind)).map((l) => l.id);
+  const blockNo = Math.min(4, prog.block) as Block;
+  void s;
 
   const weights = store.metrics.filter((m) => m.weightKg != null);
   const waists = store.metrics.filter((m) => m.waistCm != null);
@@ -46,35 +48,68 @@ export function renderProgress(el: HTMLElement) {
   const waistDelta = waistNow != null && waistFirst != null && waists.length > 1 ? Math.round((waistNow - waistFirst) * 10) / 10 : null;
 
   el.innerHTML = `
-    <header class="page-head"><div><p class="eyebrow">Ladders &amp; body</p><h1>Progress</h1></div></header>
+    <header class="page-head"><div><p class="eyebrow">Steps &amp; body</p><h1>100 Steps</h1></div></header>
 
     ${due.length ? `<button class="banner due" data-a="gotobody"><b>${due.length}</b><span>${due.map((d) => esc(d.label)).join(' + ')} due today</span><em>Log →</em></button>` : ''}
 
+    <div class="card score">
+      <div class="score-top"><div><p class="eyebrow">Block ${blockNo} · ${esc(BLOCKS[blockNo].name)}</p><b class="score-num">${prog.score}<small>/${TOTAL_STEPS}</small></b></div></div>
+      <div class="bar"><i style="width:${(prog.score / TOTAL_STEPS) * 100}%"></i></div>
+      <p class="muted small">${prog.block > 4 ? 'All 100 done.' : prog.allowed >= 4 ? 'Every block is open.' : `Steps up to Block ${prog.allowed} are open. Block ${prog.allowed + 1} opens when every pillar finishes Block ${prog.block}.`}</p>
+      <p class="muted small"><b>Pass a step:</b> hit the target on every set, clean form, two sessions in a row. Tests (“in one set”) pass the first time you hit them. No dates: take as long as each step needs.</p>
+    </div>
+
     ${attention.length ? `<h3 class="section">Needs a decision</h3><div data-role="promos"></div>` : ''}
 
-    <h3 class="section">Ladders</h3>
-    <p class="muted small">Move up after hitting the top of the range on every set, with clean form, two sessions in a row.</p>
-    ${LADDERS.map((l) => {
-      const st = ladderState(l.id);
-      const step = currentStep(st);
-      const status = statusLabel(ladderStatus(st, store.sessions, s, today));
-      const dots = l.steps.map((_, i) => `<i class="${i < st.stepIndex ? 'past' : i === st.stepIndex ? 'now' : ''}"></i>`).join('');
-      return `
+    ${PILLARS.map((p) => {
+      const x = prog.pillars[p.id];
+      const head = `<h3 class="section pillar-head">${esc(p.name)} <small class="muted">${x.done}/${x.total}</small></h3><div class="bar thin"><i style="width:${(x.done / x.total) * 100}%"></i></div>`;
+      if (p.id === 'habits')
+        return head + `<div class="card"><ul class="checklist-steps">${HABITS.map((h) => `<li class="${prog.habits[h.key] ? 'done' : ''}"><i>${prog.habits[h.key] ? '✓' : h.n}</i><span><b>${esc(h.name)}</b><small>${esc(h.test)}</small></span></li>`).join('')}</ul><p class="muted small">Ticked automatically from your log.</p></div>`;
+      return head + p.tracks.map((id) => {
+        const l = ladder(id);
+        const st = ladderState(id);
+        const step = currentStep(st);
+        const status = statusLabel(trackStatus(id, prog));
+        const dots = l.steps.map((_, i) => `<i class="${i < st.stepIndex ? 'past' : i === st.stepIndex ? 'now' : ''}"></i>`).join('');
+        if (!step)
+          return `<div class="card ladder"><div class="ladder-head"><div><p class="eyebrow">${esc(l.name)}</p><h3>🏁 Finish line passed</h3></div><span class="pill good">Done ✓</span></div><div class="dots">${dots}</div></div>`;
+        const next = l.steps[st.stepIndex + 1];
+        const canUp = !!next && next.block <= prog.allowed;
+        return `
       <div class="card ladder">
         <div class="ladder-head">
-          <div><p class="eyebrow">${esc(l.name)}${l.where === 'bar' ? ' · outdoor bars' : ''}</p><h3>${esc(step.name)}</h3>
-          <p class="muted small">Step ${st.stepIndex + 1} of ${l.steps.length} · ${step.min}–${step.max}${esc(unit(step))} · since ${esc(fmtDay(st.since, { day: 'numeric', month: 'short' }))}</p></div>
+          <div><p class="eyebrow">${esc(l.name)}${l.where === 'bar' ? ' · outdoor bars' : ''} · Step ${step.n}</p><h3>${esc(step.name)}</h3>
+          <p class="muted small">${step.test === 'single' ? 'Test' : 'Target'} ${esc(step.label)} · ${st.stepIndex + 1} of ${l.steps.length} · since ${esc(fmtDay(st.since, { day: 'numeric', month: 'short' }))}</p></div>
           <span class="pill ${status.cls}">${esc(status.text)}</span>
         </div>
         <div class="dots">${dots}</div>
-        ${sparkline(trend(l.id))}
+        ${sparkline(trend(id))}
         <div class="row gap">
-          <button class="btn ghost small" data-a="demo" data-id="${l.id}">▶ Demo</button>
+          <button class="btn ghost small" data-a="demo" data-id="${id}">▶ Demo</button>
           <span class="grow"></span>
-          <button class="icon-btn" data-a="down" data-id="${l.id}" aria-label="Step down" ${st.stepIndex === 0 ? 'disabled' : ''}>‹</button>
-          <button class="icon-btn" data-a="up" data-id="${l.id}" aria-label="Step up" ${st.stepIndex === l.steps.length - 1 ? 'disabled' : ''}>›</button>
+          <button class="icon-btn" data-a="down" data-id="${id}" aria-label="Step back" ${st.stepIndex === 0 ? 'disabled' : ''}>‹</button>
+          <button class="icon-btn" data-a="up" data-id="${id}" aria-label="Skip ahead" ${canUp ? '' : 'disabled'}>›</button>
         </div>
       </div>`;
+      }).join('');
+    }).join('')}
+
+    <h3 class="section">All 100 steps</h3>
+    ${([1, 2, 3, 4] as Block[]).map((b) => {
+      const items = [
+        ...LADDERS.flatMap((l) => {
+          const idx = ladderState(l.id).stepIndex;
+          return l.steps.map((st, i) => ({ n: st.n, name: `${l.name}: ${st.name}`, detail: st.label, block: st.block, state: i < idx ? 'done' : i === idx ? 'now' : 'todo', finish: !!st.finish }));
+        }),
+        ...HABITS.map((h) => ({ n: h.n, name: `Habit: ${h.name}`, detail: h.test, block: h.block, state: prog.habits[h.key] ? 'done' : 'todo', finish: false })),
+      ].filter((x) => x.block === b).sort((x, y) => x.n - y.n);
+      const done = items.filter((x) => x.state === 'done').length;
+      const locked = b > prog.allowed;
+      return `<details class="card block"${b === blockNo ? ' open' : ''}><summary><b>Block ${b} · ${esc(BLOCKS[b].name)}</b><span class="muted small">${locked ? '🔒 ' : ''}${done}/${items.length}</span></summary>
+        <p class="muted small">${esc(BLOCKS[b].about)}</p>
+        <ul class="checklist-steps">${items.map((x) => `<li class="${x.state}${locked && x.state !== 'done' ? ' locked' : ''}"><i>${x.state === 'done' ? '✓' : x.n}</i><span><b>${x.finish ? '🏁 ' : ''}${esc(x.name)}</b><small>${esc(x.detail)}</small></span></li>`).join('')}</ul>
+      </details>`;
     }).join('')}
 
     <h3 class="section" id="body">Body</h3>
@@ -128,15 +163,20 @@ export function renderProgress(el: HTMLElement) {
       el.querySelector<HTMLInputElement>(due[0]?.key === 'waist' ? 'input[name=waist]' : 'input[name=weight]')?.focus({ preventScroll: true });
       return;
     }
-    if (a === 'demo') showDemo(currentStep(ladderState(id)));
+    if (a === 'demo') {
+      const st = currentStep(ladderState(id));
+      if (st) showDemo(st);
+      return;
+    }
     else if (a === 'up' || a === 'down') {
       const l = ladder(id);
       const st = ladderState(id);
       const target = l.steps[st.stepIndex + (a === 'up' ? 1 : -1)];
+      if (!target) return;
       const ok = await confirmSheet(
-        `${a === 'up' ? 'Move up' : 'Step back'} to ${target.name}?`,
-        a === 'up' ? 'Only skip ahead if the current step is clearly too easy.' : 'Stepping back is fine — clean reps beat ugly ones.',
-        a === 'up' ? 'Move up' : 'Step back',
+        `${a === 'up' ? 'Skip to' : 'Back to'} step ${target.n}: ${target.name} ${target.label}?`,
+        a === 'up' ? 'Only skip ahead if the current step is clearly too easy.' : 'Stepping back is fine: clean reps beat ugly ones.',
+        a === 'up' ? 'Skip ahead' : 'Step back',
       );
       if (!ok) return;
       if (target.needsBands && !store.settings.hasBands) toast('Heads up: this step needs bands');

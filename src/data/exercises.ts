@@ -32,16 +32,15 @@ export interface Step {
   loop?: string;
 }
 
-export type LadderId = 'push' | 'row' | 'vpull' | 'squat' | 'hinge' | 'core';
-
-export interface Ladder {
-  id: LadderId;
+/** Exercise catalog, grouped by track. The 100-step program (program.ts) sets targets on these. */
+interface Group {
+  id: string;
   name: string;
   where: 'home' | 'bar';
   steps: Step[];
 }
 
-export const LADDERS: Ladder[] = [
+const GROUPS: Group[] = [
   {
     id: 'push',
     name: 'Push',
@@ -111,25 +110,25 @@ export const LADDERS: Ladder[] = [
         video: { ...HC_PULLUPS, note: 'Wall pullups (first step) are the same idea as a doorframe row: grip, lean back, pull.' },
       },
       {
-        id: 'row-seated', name: 'Seated band row (light)', metric: 'reps', min: 8, max: 15, needsBands: true,
+        id: 'row-seated', name: 'Seated band row (10 kg band)', metric: 'reps', min: 8, max: 15, needsBands: true,
         cues: ['Sit tall, band looped around your feet', 'Pull elbows back past your ribs', 'Shoulders down and back, no shrugging'],
         search: 'seated resistance band row form',
         video: { id: 'PKZW3s3G_Y0', note: 'Scott Abel Coaching: seated band rows, with and without an anchor.' },
       },
       {
-        id: 'row-standing-light', name: 'Standing band row, door anchor (light)', metric: 'reps', min: 8, max: 15, needsBands: true,
+        id: 'row-standing-light', name: 'Standing band row (10 kg band)', metric: 'reps', min: 8, max: 15, needsBands: true,
         cues: ['Anchor at chest height, close the door fully', 'Slight knee bend, chest up', 'Pull to lower ribs, control the return'],
         search: 'standing resistance band row door anchor',
         video: { id: 'k7EPhs1i9mU', note: 'Standing band row with a door anchor.' },
       },
       {
-        id: 'row-standing-medium', name: 'Standing band row (medium)', metric: 'reps', min: 8, max: 15, needsBands: true,
+        id: 'row-standing-medium', name: 'Standing band row (20 kg band)', metric: 'reps', min: 8, max: 15, needsBands: true,
         cues: ['Same setup, medium band', 'Step back for more tension', 'No leaning back to cheat'],
         search: 'standing resistance band row door anchor',
         video: { id: 'k7EPhs1i9mU', note: 'Standing band row with a door anchor.' },
       },
       {
-        id: 'row-squeeze', name: 'Band row + 2s squeeze (medium)', metric: 'reps', min: 8, max: 15, needsBands: true,
+        id: 'row-squeeze', name: 'Band row + 2s squeeze (20 kg band)', metric: 'reps', min: 8, max: 15, needsBands: true,
         cues: ['Hold 2 sec with shoulder blades squeezed', 'Slow 2–3 sec return', 'Elbows close to body'],
         search: 'band row pause squeeze',
         video: { id: 'k7EPhs1i9mU', note: 'Same row. Add the 2-second squeeze at the top.' },
@@ -245,7 +244,7 @@ export const LADDERS: Ladder[] = [
         video: { id: 'nat5dN0Kuao', start: 44, note: 'Onnit: single-leg glute bridge technique (0:44).' },
       },
       {
-        id: 'hg-band-gm', name: 'Band good morning', metric: 'reps', min: 10, max: 15, needsBands: true,
+        id: 'hg-band-gm', name: 'Band good morning (20 kg band)', metric: 'reps', min: 10, max: 15, needsBands: true,
         cues: ['Band under feet, loop behind neck', 'Soft knees, push hips back', 'Flat back, stand tall by squeezing glutes'],
         search: 'resistance band good morning form',
         video: { id: 'jKBQUap7zMo', note: 'Resistance band good morning.' },
@@ -284,6 +283,104 @@ export const LADDERS: Ladder[] = [
     ],
   },
 ];
+
+/** Exercises added for the 100-step program. */
+const ADDED: Step[] = [
+  {
+    id: 'push-negative', name: 'Floor pushup negative', metric: 'reps', min: 3, max: 5,
+    cues: ['Start at the top of a floor pushup', 'Lower for a slow 5 count, body straight', 'Drop the knees to come back up'],
+    search: 'push up negatives beginner',
+  },
+  {
+    id: 'dip-support', name: 'Parallel bar support hold', metric: 'hold', min: 10, max: 30,
+    cues: ['Arms locked straight, hands by your hips', 'Shoulders pushed down, away from ears', 'Legs together, slightly in front'],
+    search: 'parallel bar support hold dips beginner',
+  },
+  {
+    id: 'dip-negative', name: 'Dip negative', metric: 'reps', min: 3, max: 5,
+    cues: ['Jump or step to the top support', 'Lower for 5 seconds until shoulders are just below elbows', 'Step down; don’t press back up'],
+    search: 'negative dips how to',
+  },
+  {
+    id: 'dip-feet', name: 'Feet-assisted dip', metric: 'reps', min: 5, max: 10,
+    cues: ['Toes on the ground or a low step behind you', 'Use the legs only as much as you need', 'Elbows back, chest slightly forward'],
+    search: 'assisted dips feet on ground parallel bars',
+  },
+  {
+    id: 'dip-full', name: 'Parallel bar dip', metric: 'reps', min: 1, max: 10,
+    cues: ['Lower until shoulders are just below elbows', 'Elbows back, not flared', 'Lock out fully at the top'],
+    search: 'parallel bar dip proper form',
+  },
+  {
+    id: 'row-standing-heavy', name: 'Standing band row (30 kg band)', metric: 'reps', min: 8, max: 15, needsBands: true,
+    cues: ['Same setup as the 20 kg row', 'Step back for more tension', 'Squeeze shoulder blades at the end of each rep'],
+    search: 'standing resistance band row door anchor',
+    video: { id: 'k7EPhs1i9mU', note: 'Standing band row with a door anchor.' },
+  },
+  {
+    id: 'vp-flexed', name: 'Flexed-arm hang', metric: 'hold', min: 5, max: 15,
+    cues: ['Step up so your chin is over the bar', 'Hold, elbows tight, chest to the bar', 'Lower slowly when you can’t hold it'],
+    search: 'flexed arm hang pull up progression',
+  },
+  {
+    id: 'sq-pistol-high', name: 'Box pistol to the sofa', metric: 'reps', min: 3, max: 5, perSide: true,
+    cues: ['Stand on one leg, other leg straight out in front', 'Sit back slowly onto the sofa edge', 'Stand up on the one leg without rocking'],
+    search: 'box pistol squat progression',
+  },
+  {
+    id: 'sq-pistol-low', name: 'Box pistol to a chair', metric: 'reps', min: 3, max: 5, perSide: true,
+    cues: ['Same as the sofa version, lower seat', 'Touch, don’t sit down heavily', 'Arms forward for balance'],
+    search: 'box pistol squat progression',
+  },
+  {
+    id: 'sq-pistol-assisted', name: 'Assisted pistol (hold the doorframe)', metric: 'reps', min: 3, max: 5, perSide: true,
+    cues: ['Hold the doorframe lightly with one or both hands', 'Full depth, heel down', 'Pull with the arms only as much as you need'],
+    search: 'assisted pistol squat door frame',
+  },
+  {
+    id: 'sq-pistol', name: 'Pistol squat', metric: 'reps', min: 1, max: 5, perSide: true,
+    cues: ['Free leg straight out, arms forward', 'Sit all the way down, heel stays flat', 'Stand up without touching anything'],
+    search: 'pistol squat tutorial',
+  },
+  {
+    id: 'hg-slrdl-supported', name: 'Single-leg deadlift (hand on wall)', metric: 'reps', min: 6, max: 10, perSide: true,
+    cues: ['Fingertips on a wall for balance', 'Hinge at the hip, back leg rises in line with the back', 'Stand by squeezing the standing-side glute'],
+    search: 'single leg romanian deadlift bodyweight',
+  },
+  {
+    id: 'hg-slrdl', name: 'Single-leg deadlift', metric: 'reps', min: 6, max: 10, perSide: true,
+    cues: ['No support; arms reach toward the floor', 'Hips stay square, don’t twist open', 'Slow on the way down'],
+    search: 'single leg romanian deadlift bodyweight',
+  },
+  {
+    id: 'core-sideplank', name: 'Side plank', metric: 'hold', min: 15, max: 40, perSide: true,
+    cues: ['Elbow under shoulder', 'Hips high, body in one line', 'Knees bent to make it easier'],
+    search: 'side plank proper form',
+  },
+  {
+    id: 'core-hollow-tuck', name: 'Tucked hollow hold', metric: 'hold', min: 15, max: 30,
+    cues: ['Lower back pressed into the floor', 'Knees tucked toward the chest, shoulders off the floor', 'Breathe; don’t let the back arch'],
+    search: 'tuck hollow body hold beginner',
+  },
+  {
+    id: 'hang-kneeraise', name: 'Hanging knee raise', metric: 'reps', min: 3, max: 10,
+    cues: ['Dead hang, shoulders engaged', 'Bring knees up to hip height or higher', 'Lower slowly; no swinging'],
+    search: 'hanging knee raise proper form',
+  },
+  {
+    id: 'hang-tucksupport', name: 'Tuck support on parallel bars', metric: 'hold', min: 3, max: 10,
+    cues: ['Support position, arms locked', 'Lift both knees toward the chest', 'Shoulders down, chest proud'],
+    search: 'tuck l sit parallel bars progression',
+  },
+  {
+    id: 'hang-tucklsit', name: 'Tuck L-sit', metric: 'hold', min: 3, max: 10,
+    cues: ['Support on the bars, knees tucked', 'Push the knees forward until thighs are level', 'Lean back slightly, shoulders down'],
+    search: 'tuck l sit tutorial',
+  },
+];
+
+/** Every exercise by id. Entries in logged sessions refer to these ids. */
+export const EXERCISES: Record<string, Step> = Object.fromEntries([...GROUPS.flatMap((g) => g.steps), ...ADDED].map((s) => [s.id, s]));
 
 export const PULL_APART: Step = {
   id: 'pull-apart', name: 'Band pull-apart', metric: 'reps', min: 15, max: 20, needsBands: true,
@@ -358,19 +455,11 @@ export const COOLDOWN: GuidedMove[] = [
   },
 ];
 
-export function ladder(id: LadderId): Ladder {
-  const l = LADDERS.find((x) => x.id === id);
-  if (!l) throw new Error(`Unknown ladder ${id}`);
-  return l;
-}
-
-export function findStep(stepId: string): { ladder?: Ladder; step: Step; index: number } | undefined {
-  if (stepId === PULL_APART.id) return { step: PULL_APART, index: 0 };
-  for (const l of LADDERS) {
-    const i = l.steps.findIndex((s) => s.id === stepId);
-    if (i >= 0) return { ladder: l, step: l.steps[i], index: i };
-  }
-  return undefined;
+/** Look up an exercise by id (entries store exercise ids). */
+export function findStep(stepId: string): { step: Step } | undefined {
+  if (stepId === PULL_APART.id) return { step: PULL_APART };
+  const step = EXERCISES[stepId];
+  return step ? { step } : undefined;
 }
 
 export function unit(step: Step): string {

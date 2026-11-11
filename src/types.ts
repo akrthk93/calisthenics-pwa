@@ -1,4 +1,4 @@
-import type { LadderId } from './data/exercises';
+import type { LadderId } from './data/program';
 
 export interface Settings {
   /** YYYY-MM-DD local date the plan started (drives 2 vs 3 sets). */
@@ -56,11 +56,14 @@ export interface ProgressEvent {
   ladderId: LadderId;
   fromIndex: number;
   toIndex: number;
+  /** Program step reached (v2+). Older events predate the 100-step program. */
+  stepKey?: string;
 }
 
 export interface Backup {
   app: 'calisthenics-pwa';
-  version: 1;
+  /** 1: pre-program ladders. 2: 100-step program tracks. */
+  version: 1 | 2;
   exportedAt: string;
   settings: Settings;
   ladders: LadderState[];

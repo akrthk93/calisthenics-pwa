@@ -1,6 +1,7 @@
-import { LADDERS, unit } from '../data/exercises';
+import { BLOCKS, LADDERS, PILLARS, TOTAL_STEPS, type Block } from '../data/program';
+import { NEEDS_DECISION, program, trackStatus } from './promote';
 import { addDays, dayKey, fmtDay, isStrengthDay, parseDay, weekStart } from '../dates';
-import { countsAsStrength, currentStep, ladderStatus, missedLastSlot, plannedSets, weekStreak } from '../logic';
+import { countsAsStrength, currentStep, missedLastSlot, plannedSets, weekStreak } from '../logic';
 import { store } from '../store';
 import { discardRun, pendingRun, startRun } from './session';
 import { esc } from './util';
@@ -32,7 +33,9 @@ export function renderToday(el: HTMLElement) {
   const missed = missedLastSlot(sessions, today, s.startDate);
   const sets = plannedSets(s, today);
   const pend = pendingRun();
-  const ready = store.ladders.filter((l) => ['ready', 'needs-bands', 'stalled'].includes(ladderStatus(l, sessions, s, today).kind));
+  const prog = program();
+  const ready = store.ladders.filter((l) => NEEDS_DECISION.includes(trackStatus(l.id, prog).kind));
+  const blockNo = Math.min(4, prog.block) as Block;
   const deload = s.deloadUntil && today <= s.deloadUntil;
 
   const strip = DOW.map((label, i) => {
@@ -73,6 +76,15 @@ export function renderToday(el: HTMLElement) {
     <div class="week">${strip}</div>
     <p class="muted small week-meta">Strength ${strengthThisWeek}/3 · Walks ${walksThisWeek}/3</p>
 
+    <button class="card score" data-a="progress">
+      <div class="score-top"><div><p class="eyebrow">Block ${blockNo} · ${esc(BLOCKS[blockNo].name)}</p><b class="score-num">${prog.score}<small>/${TOTAL_STEPS}</small></b></div><span class="muted small">steps →</span></div>
+      <div class="bar"><i style="width:${(prog.score / TOTAL_STEPS) * 100}%"></i></div>
+      <div class="pillar-mini">${PILLARS.map((p) => {
+        const x = prog.pillars[p.id];
+        return `<span><small>${esc(p.name)}</small><em><i style="width:${(x.done / x.total) * 100}%"></i></em></span>`;
+      }).join('')}</div>
+    </button>
+
     ${missed && !doneToday ? `<div class="banner warn">Missed the last session. Don’t miss twice — the 5-minute version counts.</div>` : ''}
 
     ${main}
@@ -82,14 +94,17 @@ export function renderToday(el: HTMLElement) {
       <button class="card tile" data-a="min"><span class="tile-ico">⏱</span><b>Minimum session</b><small>Bad day · 5 min</small></button>
     </div>
 
-    ${ready.length ? `<button class="banner good" data-a="progress">${ready.length} exercise${ready.length > 1 ? 's' : ''} ready for a progress check →</button>` : ''}
+    ${ready.length ? `<button class="banner good" data-a="progress">${ready.length} step${ready.length > 1 ? 's' : ''} passed: tap to clear →</button>` : ''}
 
-    <h3 class="section">Your levels</h3>
+    <h3 class="section">Current steps</h3>
     <ul class="levels">
       ${LADDERS.map((l) => {
         const st = store.ladders.find((x) => x.id === l.id)!;
         const step = currentStep(st);
-        return `<li><span class="lvl-name">${esc(l.name)}${l.where === 'bar' ? ' <small>(bars)</small>' : ''}</span><span>${esc(step.name)}</span><small>${step.min}–${step.max}${esc(unit(step))}</small></li>`;
+        const st2 = trackStatus(l.id, prog);
+        const right = !step ? '<small class="good">Done ✓</small>' : st2.kind === 'locked' ? `<small>Block ${step.block}</small>` : `<small>${esc(step.label)}</small>`;
+        const mid = !step ? 'Finish line passed' : st2.kind === 'locked' ? 'Not started' : `<b class="stepno">${step.n}</b> ${esc(step.name)}`;
+        return `<li${st2.kind === 'locked' ? ' class="locked"' : ''}><span class="lvl-name">${esc(l.name)}${l.where === 'bar' ? ' <small>(bars)</small>' : ''}</span><span>${mid}</span>${right}</li>`;
       }).join('')}
     </ul>`;
 
